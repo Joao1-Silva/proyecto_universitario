@@ -1,0 +1,13 @@
+﻿DROP TABLE IF EXISTS finance_receipts;
+DROP TABLE IF EXISTS finance_late_fees;
+DROP TABLE IF EXISTS finance_installments;
+DROP TABLE IF EXISTS finance_payments;
+DROP TABLE IF EXISTS inventory_movements;
+DROP TABLE IF EXISTS inventory_items;
+DROP TABLE IF EXISTS departments;
+DROP TABLE IF EXISTS price_list_items;
+DROP TABLE IF EXISTS price_lists;
+DROP TABLE IF EXISTS products;
+DROP TABLE IF EXISTS movement_history;
+DROP TABLE IF EXISTS purchase_order_items;
+DROP TABLE IF EXISTS schema_migrations;

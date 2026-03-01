@@ -1,0 +1,26 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "types": [
+      "node",
+      "electron"
+    ],
+    "rootDir": ".",
+    "outDir": "../electron-dist",
+    "noEmit": false,
+    "isolatedModules": false,
+    "incremental": false
+  },
+  "include": [
+    "./main.ts",
+    "./preload.ts",
+    "./electron-env.d.ts"
+  ]
+}
