@@ -4,6 +4,7 @@ import type { ReactNode } from "react"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { createApiClient } from "@/lib/api-client"
+import type { PurchaseOrder, Supplier } from "@/lib/api-types"
 import { syncCategories } from "@/lib/category-sync"
 import { getCurrentUser, loadStore, signOut, updateStore, useAppStore } from "@/lib/store"
 
@@ -14,11 +15,15 @@ const parsePaginatedData = <T,>(payload: unknown): T[] => {
   return data as T[]
 }
 
+const sameJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
+
 export function AuthGuard({ children }: { children: ReactNode }) {
   const apiClient = createApiClient({ timeoutMs: 2500, retries: 0 })
   const router = useRouter()
   const store = useAppStore()
   const currentUser = getCurrentUser(store)
+  const currentUserId = currentUser?.id ?? ""
+  const sessionToken = store.session?.token ?? ""
   const [hasCheckedSession, setHasCheckedSession] = useState(false)
 
   useEffect(() => {
@@ -32,7 +37,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hasCheckedSession) return
-    if (!store.session || !currentUser) {
+    if (!sessionToken || !currentUserId) {
       signOut()
       router.replace("/login")
       return
@@ -55,18 +60,32 @@ export function AuthGuard({ children }: { children: ReactNode }) {
       if (cancelled) return
 
       if (suppliersResponse.ok || ordersResponse.ok) {
-        updateStore((storeState) => ({
-          ...storeState,
-          ...(suppliersResponse.ok ? { suppliers: parsePaginatedData(suppliersResponse.data) } : {}),
-          ...(ordersResponse.ok ? { purchaseOrders: parsePaginatedData(ordersResponse.data) } : {}),
-        }))
+        const nextSuppliers = suppliersResponse.ok ? parsePaginatedData<Supplier>(suppliersResponse.data) : null
+        const nextOrders = ordersResponse.ok ? parsePaginatedData<PurchaseOrder>(ordersResponse.data) : null
+
+        updateStore((storeState) => {
+          let changed = false
+          let nextState = storeState
+
+          if (nextSuppliers && !sameJson(storeState.suppliers, nextSuppliers)) {
+            nextState = { ...nextState, suppliers: nextSuppliers }
+            changed = true
+          }
+
+          if (nextOrders && !sameJson(storeState.purchaseOrders, nextOrders)) {
+            nextState = { ...nextState, purchaseOrders: nextOrders }
+            changed = true
+          }
+
+          return changed ? nextState : storeState
+        })
       }
     }
     void validateSession()
     return () => {
       cancelled = true
     }
-  }, [currentUser, hasCheckedSession, router, store.session])
+  }, [currentUserId, hasCheckedSession, router, sessionToken])
 
   if (!hasCheckedSession || !store.session || !currentUser) {
     return (
