@@ -127,15 +127,17 @@ def _is_rate_limited(
 
 @router.post("/login")
 def login(payload: AuthLoginRequest, request: Request, session: Session = Depends(get_db)) -> dict:
+    identifier = payload.email.strip().lower()
+    password = payload.password.strip()
     user = session.execute(
-        select(UserModel).where(func.lower(UserModel.email) == payload.email.strip().lower())
+        select(UserModel).where(func.lower(UserModel.email) == identifier)
     ).scalar_one_or_none()
-    if user is None or not verify_secret(payload.password, user.password):
+    if not identifier or not password or user is None or not verify_secret(password, user.password):
         log_audit_event(
             session,
             action="login_failed",
             entity_type="auth",
-            entity_id=payload.email.strip().lower() or "unknown",
+            entity_id=identifier or "unknown",
             metadata={"reason": "invalid_credentials"},
             request=request,
             user_id=user.id if user else "anonymous",
@@ -146,7 +148,7 @@ def login(payload: AuthLoginRequest, request: Request, session: Session = Depend
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials.")
 
     if not is_password_hash(user.password):
-        user.password = hash_secret(payload.password)
+        user.password = hash_secret(password)
 
     token = issue_token(user.id)
     log_audit_event(

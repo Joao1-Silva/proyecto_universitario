@@ -1133,6 +1133,11 @@ export const isBrowserMockApiEnabled = (): boolean => {
   if (["true", "1", "yes", "on"].includes(raw)) return true
   if (["false", "0", "no", "off"].includes(raw)) return false
 
+  // Beta-safe default: if env flag is not explicitly set, use browser mock API.
+  // This avoids mobile/browser clients trying to authenticate against non-shared
+  // desktop/local backends with different credentials.
+  if (!raw) return true
+
   const isLoopbackHost = (hostname: string) => {
     const normalized = hostname.trim().toLowerCase()
     return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1"
@@ -1207,7 +1212,7 @@ export const mockApiRequest = async (
   if (routeKey === "POST:/auth/login") {
     if (!isObject(body)) return failure(422, "Invalid login payload.")
     const email = String(body.email ?? "").trim().toLowerCase()
-    const password = String(body.password ?? "")
+    const password = String(body.password ?? "").trim()
     const user = state.users.find((item) => item.email.toLowerCase() === email)
     if (!user || user.password !== password) {
       return failure(401, "Invalid credentials.")

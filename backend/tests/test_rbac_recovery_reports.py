@@ -365,6 +365,16 @@ class RbacRecoveryReportsTests(unittest.TestCase):
         self.assertEqual(activate_response.status_code, 200, activate_response.text)
         self.assertTrue(activate_response.json()["data"]["isActive"])
 
+    def test_05_login_accepts_mobile_style_whitespace(self) -> None:
+        response = self.client.post(
+            "/auth/login",
+            json={
+                "email": "  MARIA.LOPEZ@EMPRESA.COM  ",
+                "password": "  Finance123!  ",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
 
 if __name__ == "__main__":
     unittest.main()

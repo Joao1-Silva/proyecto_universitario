@@ -126,10 +126,18 @@ export default function LoginPage() {
     e.preventDefault()
     setError("")
     setIsLoading(true)
+    const normalizedEmail = email.trim().toLowerCase()
+    const normalizedPassword = password.trim()
+
+    if (!normalizedEmail || !normalizedPassword) {
+      setError("Ingresa email y contrasena validos.")
+      setIsLoading(false)
+      return
+    }
 
     const response = await apiClient.request<unknown>("POST", "/auth/login", {
-      email: email.trim(),
-      password,
+      email: normalizedEmail,
+      password: normalizedPassword,
     })
     const parsed = response.ok ? parseLoginPayload(response.data) : null
 
@@ -281,12 +289,16 @@ export default function LoginPage() {
                 placeholder="usuario@empresa.com"
                 value={email}
                 onChange={(e) => {
-                  setEmail(e.target.value)
+                  setEmail(e.target.value.toLowerCase())
                   if (error) setError("")
                 }}
                 required
                 disabled={isLoading}
                 autoComplete="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                inputMode="email"
               />
             </div>
 
@@ -309,6 +321,9 @@ export default function LoginPage() {
                 required
                 disabled={isLoading}
                 autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
               />
             </div>
           </CardContent>
