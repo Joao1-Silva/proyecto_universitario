@@ -1,4 +1,4 @@
-import { isBrowserMockApiEnabled, mockApiHealth, mockApiRequest } from "./browser-mock-api"
+import { isBrowserMockApiEnabled, mockApiRequest } from "./browser-mock-api"
 
 export interface ApiClientResult<T = unknown> {
   ok: boolean
@@ -16,6 +16,7 @@ interface ApiClientOptions {
 const DEFAULT_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000"
 const DEFAULT_TIMEOUT_MS = 2500
 const DEFAULT_RETRIES = 1
+let browserMockTransport: "unknown" | "server" | "local" = "unknown"
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
@@ -61,6 +62,8 @@ const parseHttpPayload = async (response: Response): Promise<unknown> => {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const normalizeApiPath = (path: string): string => (path.startsWith("/") ? path : `/${path}`)
 
 export class ApiClient {
   private readonly baseUrl: string
@@ -118,6 +121,69 @@ export class ApiClient {
     }
   }
 
+  private async requestWithBrowserMockServer<T>(
+    method: string,
+    path: string,
+    body: unknown,
+    headers: Record<string, string>,
+  ): Promise<ApiClientResult<T>> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs)
+    const normalizedPath = normalizeApiPath(path)
+    const url = `/api/mock${normalizedPath}`
+    const hasBody = body !== undefined
+
+    try {
+      const response = await fetch(url, {
+        method,
+        signal: controller.signal,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
+        body: hasBody ? JSON.stringify(body) : undefined,
+      })
+      const payload = await parseHttpPayload(response)
+      return {
+        ok: response.ok,
+        statusCode: response.status,
+        data: payload as T,
+        error: response.ok ? undefined : readErrorMessage(payload) ?? `HTTP ${response.status}`,
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        statusCode: 0,
+        error: error instanceof Error ? error.message : "Network request failed",
+      }
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
+  private async requestWithBrowserMock<T>(method: string, path: string, body?: unknown): Promise<ApiClientResult<T>> {
+    const headers = this.buildHeaders(body !== undefined)
+    const canUseServerTransport = typeof window !== "undefined" && !hasElectronBridge()
+
+    if (canUseServerTransport && browserMockTransport !== "local") {
+      const serverResult = await this.requestWithBrowserMockServer<T>(method, path, body, headers)
+      const serverRouteMissing = serverResult.statusCode === 404 || serverResult.statusCode === 405
+      const initialNetworkFailure = browserMockTransport === "unknown" && serverResult.statusCode === 0
+
+      if (!serverRouteMissing && !initialNetworkFailure) {
+        browserMockTransport = "server"
+        return serverResult
+      }
+
+      browserMockTransport = "local"
+    }
+
+    const mockResult = await mockApiRequest(method, path, body, headers)
+    return {
+      ok: mockResult.ok,
+      statusCode: mockResult.statusCode,
+      data: mockResult.data as T | undefined,
+      error: mockResult.error,
+    }
+  }
+
   async request<T>(method: string, path: string, body?: unknown): Promise<ApiClientResult<T>> {
     const retries = Math.max(this.retries, 0)
     const headers = this.buildHeaders(body !== undefined)
@@ -134,13 +200,7 @@ export class ApiClient {
           error: bridgeResult.error,
         }
       } else if (isBrowserMockApiEnabled()) {
-        const mockResult = await mockApiRequest(method, path, body, headers)
-        result = {
-          ok: mockResult.ok,
-          statusCode: mockResult.statusCode,
-          data: mockResult.data as T | undefined,
-          error: mockResult.error,
-        }
+        result = await this.requestWithBrowserMock<T>(method, path, body)
       } else {
         result = await this.requestWithFetch<T>(method, path, body)
       }
@@ -172,13 +232,7 @@ export class ApiClient {
     }
 
     if (isBrowserMockApiEnabled()) {
-      const mockResult = await mockApiHealth()
-      return {
-        ok: mockResult.ok,
-        statusCode: mockResult.statusCode,
-        data: mockResult.data,
-        error: mockResult.error,
-      }
+      return this.requestWithBrowserMock<Record<string, unknown>>("GET", "/health")
     }
 
     return this.request<Record<string, unknown>>("GET", "/health")

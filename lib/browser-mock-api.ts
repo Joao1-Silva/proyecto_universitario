@@ -1191,8 +1191,9 @@ export const mockApiRequest = async (
   path: string,
   body: unknown,
   headers: Record<string, string> = {},
+  options: { force?: boolean } = {},
 ): Promise<MockApiResult<unknown>> => {
-  if (!isBrowserMockApiEnabled()) {
+  if (!options.force && !isBrowserMockApiEnabled()) {
     return failure(503, "Browser mock API is disabled.")
   }
 

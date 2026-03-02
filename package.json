@@ -7,7 +7,7 @@
     "check:windows": "node scripts/check-windows-compat.cjs",
     "build": "next build --webpack",
     "build:web": "next build --webpack",
-    "build:renderer": "next build --webpack",
+    "build:renderer": "cross-env NEXT_OUTPUT_MODE=export next build --webpack",
     "build:backend:runtime": "node scripts/build-backend-runtime.cjs",
     "build:electron:ts": "tsc -p electron/tsconfig.json",
     "build:electron": "npm run build:electron:ts",
