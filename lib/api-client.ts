@@ -65,6 +65,17 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const normalizeApiPath = (path: string): string => (path.startsWith("/") ? path : `/${path}`)
 
+const shouldUseServerMockTransport = (): boolean => {
+  const raw = String(process.env.NEXT_PUBLIC_BROWSER_MOCK_TRANSPORT ?? "")
+    .trim()
+    .toLowerCase()
+  if (raw === "server") return true
+  if (raw === "local") return false
+  // Safe default for Vercel beta mode: browser-local persistence avoids
+  // serverless in-memory session/state resets between requests.
+  return false
+}
+
 export class ApiClient {
   private readonly baseUrl: string
   private readonly timeoutMs: number
@@ -160,7 +171,8 @@ export class ApiClient {
 
   private async requestWithBrowserMock<T>(method: string, path: string, body?: unknown): Promise<ApiClientResult<T>> {
     const headers = this.buildHeaders(body !== undefined)
-    const canUseServerTransport = typeof window !== "undefined" && !hasElectronBridge()
+    const canUseServerTransport =
+      typeof window !== "undefined" && !hasElectronBridge() && shouldUseServerMockTransport()
 
     if (canUseServerTransport && browserMockTransport !== "local") {
       const serverResult = await this.requestWithBrowserMockServer<T>(method, path, body, headers)
