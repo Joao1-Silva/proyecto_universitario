@@ -1127,8 +1127,36 @@ const buildFiltersFromQuery = (query: URLSearchParams): Record<string, unknown> 
 }
 
 export const isBrowserMockApiEnabled = (): boolean => {
+  if (typeof window === "undefined") return false
+
   const raw = String(process.env.NEXT_PUBLIC_ENABLE_BROWSER_MOCK_API ?? "").trim().toLowerCase()
-  return typeof window !== "undefined" && raw === "true"
+  if (["true", "1", "yes", "on"].includes(raw)) return true
+  if (["false", "0", "no", "off"].includes(raw)) return false
+
+  const isLoopbackHost = (hostname: string) => {
+    const normalized = hostname.trim().toLowerCase()
+    return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1"
+  }
+
+  const parseHostname = (value: string): string | null => {
+    try {
+      const url = new URL(value)
+      return url.hostname
+    } catch {
+      return null
+    }
+  }
+
+  const apiBase = String(process.env.NEXT_PUBLIC_API_BASE_URL ?? "").trim() || "http://127.0.0.1:8000"
+  const apiHost = parseHostname(apiBase)
+  const webHost = window.location.hostname
+
+  const apiLooksLoopback = apiHost ? isLoopbackHost(apiHost) : true
+  const webIsLoopback = isLoopbackHost(webHost)
+
+  // Automatic safety net for mobile/remote browser sessions when API_BASE_URL
+  // still points to localhost and is unreachable from that client.
+  return apiLooksLoopback && !webIsLoopback
 }
 
 export const mockApiHealth = async (): Promise<MockApiResult<Record<string, unknown>>> => {
