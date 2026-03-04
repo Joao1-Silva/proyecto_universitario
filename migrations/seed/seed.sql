@@ -12,7 +12,7 @@ INSERT INTO departments (id, name, is_active, created_at)
 SELECT 'dept_finanzas', 'Finanzas', 1, CURRENT_TIMESTAMP
 WHERE NOT EXISTS (SELECT 1 FROM departments WHERE id = 'dept_finanzas');
 INSERT INTO departments (id, name, is_active, created_at)
-SELECT 'dept_almacen', 'Almacen', 1, CURRENT_TIMESTAMP
+SELECT 'dept_almacen', 'Almacén', 1, CURRENT_TIMESTAMP
 WHERE NOT EXISTS (SELECT 1 FROM departments WHERE id = 'dept_almacen');
 INSERT INTO departments (id, name, is_active, created_at)
 SELECT 'dept_hse', 'HSE', 1, CURRENT_TIMESTAMP
@@ -149,7 +149,7 @@ WHERE NOT EXISTS (SELECT 1 FROM products WHERE id='prod_025');
 
 -- Seed one active price list
 INSERT INTO price_lists (id, name, valid_from, valid_to, supplier_id, currency, is_active, created_by, created_at)
-SELECT 'pl_20260301_base', 'Lista Base Marzo 2026', CURRENT_TIMESTAMP, NULL, NULL, 'VES', 1, 'seed', CURRENT_TIMESTAMP
+SELECT 'pl_20260301_base', 'Lista Base Marzo 2026', CURRENT_TIMESTAMP, NULL, NULL, 'USD', 1, 'seed', CURRENT_TIMESTAMP
 WHERE NOT EXISTS (SELECT 1 FROM price_lists WHERE id='pl_20260301_base');
 
 -- 25 price list items

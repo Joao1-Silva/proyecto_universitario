@@ -70,7 +70,7 @@ export default function MonitoringPage() {
     if (!response.ok) {
       setItems([])
       setTotal(0)
-      setError(response.error ?? "No se pudo cargar el historico de movimientos.")
+      setError(response.error ?? "No se pudo cargar el histórico de movimientos.")
       setIsLoading(false)
       return
     }
@@ -102,7 +102,7 @@ export default function MonitoringPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Monitoreo</h1>
-        <p className="mt-1 text-muted-foreground">Historico de movimientos del sistema</p>
+        <p className="mt-1 text-muted-foreground">Histórico de movimientos del sistema</p>
       </div>
 
       <Card>
@@ -131,7 +131,7 @@ export default function MonitoringPage() {
           </div>
 
           <div className="space-y-2">
-            <Label>Tipo evento</Label>
+            <Label>Tipo de evento</Label>
             <Select
               value={filters.eventType}
               onValueChange={(value) => setFilters((prev) => ({ ...prev, eventType: value }))}
@@ -210,7 +210,7 @@ export default function MonitoringPage() {
                   <TableHead>Fecha/Hora</TableHead>
                   <TableHead>Usuario</TableHead>
                   <TableHead>Rol</TableHead>
-                  <TableHead>Accion</TableHead>
+                  <TableHead>Acción</TableHead>
                   <TableHead>Entidad</TableHead>
                   <TableHead>Resultado</TableHead>
                 </TableRow>
@@ -257,7 +257,7 @@ export default function MonitoringPage() {
               Anterior
             </Button>
             <span className="text-sm text-muted-foreground">
-              Pagina {page} de {totalPages}
+              Página {page} de {totalPages}
             </span>
             <Button
               variant="outline"

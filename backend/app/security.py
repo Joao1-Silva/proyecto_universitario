@@ -182,7 +182,7 @@ def get_db() -> Generator[Session, None, None]:
     if session_factory is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database session factory is unavailable.",
+            detail="La sesión de base de datos no está disponible.",
         )
     session = session_factory()
     try:
@@ -197,16 +197,16 @@ def get_current_user(
 ) -> AuthenticatedUser:
     token = extract_bearer_token(authorization)
     if token is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Falta el token Bearer.")
 
     user_id = resolve_user_id_from_token(token)
     if user_id is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido.")
 
     user = session.get(UserModel, user_id)
     if user is None:
         revoke_token(token)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido.")
 
     return AuthenticatedUser(
         id=user.id,
@@ -224,7 +224,7 @@ def require_permissions(*required_permissions: Permission):
         if missing:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions. Missing: {', '.join(missing)}",
+                detail=f"Permisos insuficientes. Faltan: {', '.join(missing)}",
             )
         return current_user
 

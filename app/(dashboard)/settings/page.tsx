@@ -95,7 +95,7 @@ export default function SettingsPage() {
 
   const loadApiData = async () => {
     if (!canManageUsers) {
-      setLoadError("Solo el superusuario puede acceder a este modulo.")
+      setLoadError("Solo el superusuario puede acceder a este módulo.")
       setIsLoading(false)
       return
     }
@@ -109,7 +109,7 @@ export default function SettingsPage() {
     ])
 
     if (!companyResponse.ok || !usersResponse.ok || !questionsResponse.ok) {
-      setLoadError("No se pudo cargar la configuracion desde la base de datos.")
+      setLoadError("No se pudo cargar la configuración desde la base de datos.")
       setIsLoading(false)
       return
     }
@@ -140,9 +140,9 @@ export default function SettingsPage() {
 
   const validateUserForm = (requirePassword: boolean) => {
     if (!userForm.name.trim()) return "El nombre es requerido."
-    if (!userForm.email.trim() || !emailRegex.test(userForm.email.trim())) return "Email invalido."
+    if (!userForm.email.trim() || !emailRegex.test(userForm.email.trim())) return "Email inválido."
     if (requirePassword && userForm.password.trim().length < 6) {
-      return "La contrasena debe tener al menos 6 caracteres."
+      return "La contraseña debe tener al menos 6 caracteres."
     }
     return ""
   }
@@ -243,7 +243,7 @@ export default function SettingsPage() {
       setUsers((current) => [created, ...current])
     }
 
-    toast({ title: "Usuario creado", description: `Se agrego a ${userForm.name}.` })
+    toast({ title: "Usuario creado", description: `Se agregó a ${userForm.name}.` })
     setIsCreateUserOpen(false)
     resetUserForm()
   }
@@ -305,7 +305,7 @@ export default function SettingsPage() {
     if (!selectedUser) return
     if (!canManageUsers) {
       toast({
-        title: "Accion no permitida",
+        title: "Acción no permitida",
         description: "No tienes permisos para eliminar usuarios.",
         variant: "destructive",
       })
@@ -315,7 +315,7 @@ export default function SettingsPage() {
 
     if (currentUser?.id === selectedUser.id) {
       toast({
-        title: "Accion no permitida",
+        title: "Acción no permitida",
         description: "No puedes eliminar tu propio usuario.",
         variant: "destructive",
       })
@@ -409,10 +409,10 @@ export default function SettingsPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Ajustes</h1>
-          <p className="mt-1 text-muted-foreground">Configura los parametros del sistema</p>
+          <p className="mt-1 text-muted-foreground">Configura los parámetros del sistema</p>
         </div>
         <Alert variant="destructive">
-          <AlertDescription>Solo el superusuario puede acceder a este modulo.</AlertDescription>
+          <AlertDescription>Solo el superusuario puede acceder a este módulo.</AlertDescription>
         </Alert>
       </div>
     )
@@ -422,7 +422,7 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Ajustes</h1>
-        <p className="mt-1 text-muted-foreground">Configura los parametros del sistema</p>
+        <p className="mt-1 text-muted-foreground">Configura los parámetros del sistema</p>
       </div>
 
       {loadError && (
@@ -442,13 +442,13 @@ export default function SettingsPage() {
         <TabsContent value="company" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Informacion de la Empresa</CardTitle>
+              <CardTitle>Información de la Empresa</CardTitle>
               <CardDescription>Datos generales de tu empresa</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="company-name">Razon Social</Label>
+                  <Label htmlFor="company-name">Razón social</Label>
                   <Input
                     id="company-name"
                     value={companySettings.name}
@@ -467,7 +467,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="company-address">Direccion</Label>
+                <Label htmlFor="company-address">Dirección</Label>
                 <Input
                   id="company-address"
                   value={companySettings.address}
@@ -477,7 +477,7 @@ export default function SettingsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="company-phone">Telefono</Label>
+                  <Label htmlFor="company-phone">Teléfono</Label>
                   <Input
                     id="company-phone"
                     value={companySettings.phone}
@@ -529,7 +529,7 @@ export default function SettingsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Nuevo Usuario</DialogTitle>
-            <DialogDescription>Ingresa la informacion del usuario.</DialogDescription>
+            <DialogDescription>Ingresa la información del usuario.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {userError && (
@@ -568,7 +568,7 @@ export default function SettingsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="user-password">Contrasena</Label>
+              <Label htmlFor="user-password">Contraseña</Label>
               <Input
                 id="user-password"
                 type="password"
@@ -636,7 +636,7 @@ export default function SettingsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Editar Usuario</DialogTitle>
-            <DialogDescription>Actualiza la informacion del usuario.</DialogDescription>
+            <DialogDescription>Actualiza la información del usuario.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {userError && (
@@ -675,7 +675,7 @@ export default function SettingsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-user-password">Nueva Contrasena (opcional)</Label>
+              <Label htmlFor="edit-user-password">Nueva contraseña (opcional)</Label>
               <Input
                 id="edit-user-password"
                 type="password"
@@ -742,9 +742,9 @@ export default function SettingsPage() {
       <AlertDialog open={isDeleteUserOpen} onOpenChange={setIsDeleteUserOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar usuario?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar usuario?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta accion no se puede deshacer. El usuario "{selectedUser?.name}" sera eliminado.
+              Esta acción no se puede deshacer. El usuario "{selectedUser?.name}" será eliminado.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

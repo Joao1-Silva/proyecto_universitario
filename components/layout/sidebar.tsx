@@ -8,7 +8,7 @@ import { canonicalRole, getPermissions, roleLabel } from "@/lib/permissions"
 import { getCurrentUser, useAppStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
-const SYSTEM_NAME = "Sistema de Gestion Administrativa de activos industriales en Servicios y Mantenimientos AGUILERA21 C.A."
+const SYSTEM_NAME = "SYMBIOS"
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -31,13 +31,13 @@ export function Sidebar() {
       visible: permissions.canViewSuppliers,
     },
     {
-      title: "Ordenes de Compra",
+      title: "Órdenes de Compra",
       href: "/purchase-orders",
       icon: ClipboardList,
       visible: permissions.canViewPurchaseOrders,
     },
     {
-      title: "Almacen",
+      title: "Almacén",
       href: "/inventory",
       icon: Boxes,
       visible: permissions.canViewInventory,
@@ -67,7 +67,7 @@ export function Sidebar() {
       <div className="border-b px-5 py-4">
         <h1 className="text-sm font-semibold leading-tight text-primary">{SYSTEM_NAME}</h1>
         <p className="mt-2 text-xs text-muted-foreground">
-          {currentUser ? `${currentUser.name} - ${roleLabel(currentUser.role)}` : "Sin sesion"}
+          {currentUser ? `${currentUser.name} - ${roleLabel(currentUser.role)}` : "Sin sesión"}
         </p>
       </div>
 

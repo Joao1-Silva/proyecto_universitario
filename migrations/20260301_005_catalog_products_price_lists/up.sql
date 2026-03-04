@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS price_lists (
   valid_from DATETIME NOT NULL,
   valid_to DATETIME NULL,
   supplier_id VARCHAR(64) NULL,
-  currency VARCHAR(8) NOT NULL DEFAULT 'VES',
+  currency VARCHAR(8) NOT NULL DEFAULT 'USD' CHECK (currency = 'USD'),
   is_active BOOLEAN NOT NULL DEFAULT 1,
   created_by VARCHAR(64) NOT NULL,
   created_at DATETIME NOT NULL,

@@ -26,7 +26,7 @@ let rendererServer: HttpServer | null = null
 let rendererBaseUrl: string | null = null
 const startupLogPath = path.join(
   process.env.LOCALAPPDATA ?? process.cwd(),
-  "SGA-AGUILERA21",
+  "SYMBIOS",
   "logs",
   "startup.log",
 )
@@ -539,9 +539,9 @@ async function loadRenderer(window: BrowserWindow) {
     logStartup(`[electron] Renderer failed to load: ${message}`, error)
     const fallbackHtml = `
       <html>
-        <head><meta charset="utf-8" /><title>SGA-AGUILERA21</title></head>
+        <head><meta charset="utf-8" /><title>SYMBIOS</title></head>
         <body style="font-family:Segoe UI,Arial,sans-serif;padding:24px">
-          <h1>SGA-AGUILERA21</h1>
+          <h1>SYMBIOS</h1>
           <p>No se pudo cargar la interfaz.</p>
           <p>${message}</p>
         </body>

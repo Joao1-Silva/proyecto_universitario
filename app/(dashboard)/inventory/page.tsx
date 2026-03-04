@@ -126,8 +126,8 @@ export default function InventoryPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Almacen interno</h1>
-          <p className="mt-1 text-muted-foreground">Gestion de entradas y salidas por departamento</p>
+          <h1 className="text-3xl font-bold">Almacén interno</h1>
+          <p className="mt-1 text-muted-foreground">Gestión de entradas y salidas por departamento</p>
         </div>
         <Alert variant="destructive">
           <AlertDescription>No tienes permisos para ver inventario.</AlertDescription>
@@ -139,8 +139,8 @@ export default function InventoryPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Almacen interno</h1>
-        <p className="mt-1 text-muted-foreground">Entradas automaticas por OC certificada/recibida y salidas por departamento</p>
+        <h1 className="text-3xl font-bold">Almacén interno</h1>
+        <p className="mt-1 text-muted-foreground">Entradas automáticas por OC certificada/recibida y salidas por departamento</p>
       </div>
 
       {error && (
@@ -260,7 +260,7 @@ export default function InventoryPage() {
                   <TableHead>Producto</TableHead>
                   <TableHead>Stock</TableHead>
                   <TableHead>Tipo activo</TableHead>
-                  <TableHead>Ubicacion</TableHead>
+                  <TableHead>Ubicación</TableHead>
                   <TableHead>Actualizado</TableHead>
                 </TableRow>
               </TableHeader>

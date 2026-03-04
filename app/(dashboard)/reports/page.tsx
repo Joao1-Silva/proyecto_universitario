@@ -18,9 +18,9 @@ const apiClient = createApiClient({ timeoutMs: 4500, retries: 1 })
 type ReportType = "movement-history" | "finanzas" | "purchase-orders" | "inventory-movements"
 
 const REPORT_LABEL: Record<ReportType, string> = {
-  "movement-history": "Historico de movimientos",
+  "movement-history": "Histórico de movimientos",
   finanzas: "Reporte de finanzas",
-  "purchase-orders": "Ordenes de compra",
+  "purchase-orders": "Órdenes de compra",
   "inventory-movements": "Movimientos de inventario",
 }
 
@@ -75,7 +75,7 @@ export default function ReportsPage() {
     const parsed = parseReport(response.data)
     if (!parsed) {
       setReport(null)
-      setError("Respuesta invalida del backend.")
+      setError("Respuesta inválida del backend.")
       setIsLoading(false)
       return
     }
@@ -117,7 +117,7 @@ export default function ReportsPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Reportes</h1>
-          <p className="mt-1 text-muted-foreground">Exportacion de reportes operativos y financieros</p>
+          <p className="mt-1 text-muted-foreground">Exportación de reportes operativos y financieros</p>
         </div>
         <Alert variant="destructive">
           <AlertDescription>No tienes permisos para ver reportes.</AlertDescription>
@@ -135,7 +135,7 @@ export default function ReportsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Parametros</CardTitle>
+          <CardTitle>Parámetros</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-4">
           <div className="space-y-2">

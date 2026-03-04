@@ -119,7 +119,7 @@ export function PaymentDialog({ open, onOpenChange, defaultInvoiceId, invoices, 
     }
     setFormError("")
     if (!selectedInvoice) {
-      setFormError("No hay facturas pendientes disponibles para registrar pago.")
+      setFormError("No hay facturas pendientes disponibles para registrar pagos.")
       return
     }
     const response = await apiClient.request<unknown>("POST", "/payments", {
@@ -150,7 +150,7 @@ export function PaymentDialog({ open, onOpenChange, defaultInvoiceId, invoices, 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Registrar Pago</DialogTitle>
+          <DialogTitle>Registrar pago</DialogTitle>
           <DialogDescription>Ingresa los datos del pago a proveedor</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -185,9 +185,9 @@ export function PaymentDialog({ open, onOpenChange, defaultInvoiceId, invoices, 
                 {availableInvoices.map((invoice) => (
                   <SelectItem key={invoice.id} value={invoice.id}>
                     {invoice.invoiceNumber} - {invoice.supplierName} -{" "}
-                    {new Intl.NumberFormat("es-MX", {
+                    {new Intl.NumberFormat("es-VE", {
                       style: "currency",
-                      currency: "MXN",
+                      currency: "USD",
                     }).format(invoice.balance)}
                   </SelectItem>
                 ))}
@@ -201,14 +201,14 @@ export function PaymentDialog({ open, onOpenChange, defaultInvoiceId, invoices, 
             {selectedInvoice && (
               <div className="text-xs text-muted-foreground">
                 Saldo pendiente:{" "}
-                {new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(selectedInvoice.balance)}
+                {new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" }).format(selectedInvoice.balance)}
               </div>
             )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="date">Fecha de Pago *</Label>
+              <Label htmlFor="date">Fecha de pago *</Label>
               <Input
                 id="date"
                 type="date"
@@ -230,7 +230,7 @@ export function PaymentDialog({ open, onOpenChange, defaultInvoiceId, invoices, 
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="method">Método de Pago *</Label>
+              <Label htmlFor="method">Método de pago *</Label>
               <Select
                 value={formData.method}
                 onValueChange={(value: "transfer" | "check" | "cash") => setFormData({ ...formData, method: value })}
@@ -268,7 +268,7 @@ export function PaymentDialog({ open, onOpenChange, defaultInvoiceId, invoices, 
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="proof">Comprobante de Pago</Label>
+            <Label htmlFor="proof">Comprobante de pago</Label>
             <div className="flex items-center gap-3">
               <Button variant="outline" className="w-full bg-transparent" asChild>
                 <label htmlFor="proof" className="cursor-pointer">
@@ -291,7 +291,7 @@ export function PaymentDialog({ open, onOpenChange, defaultInvoiceId, invoices, 
             Cancelar
           </Button>
           <Button onClick={() => void handleSubmit()} disabled={!selectedInvoice || !canCreatePayments}>
-            Registrar Pago
+            Registrar pago
           </Button>
         </DialogFooter>
       </DialogContent>

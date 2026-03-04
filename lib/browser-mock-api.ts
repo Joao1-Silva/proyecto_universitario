@@ -2,6 +2,7 @@ import type {
   Category,
   CompanySettings,
   Department,
+  FinanceBalanceSummary,
   FinanceInstallment,
   FinancePayment,
   InventoryItem,
@@ -83,6 +84,12 @@ const EMAIL_REGEX = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i
 const RIF_REGEX = /^J-\d{8}-\d$/
 const E164_REGEX = /^\+[1-9]\d{7,14}$/
 
+const normalizeCurrencyUsd = (value: unknown): string | null => {
+  const normalized = String(value ?? "USD").trim().toUpperCase() || "USD"
+  if (normalized !== "USD") return null
+  return "USD"
+}
+
 let memoryState: MockApiState | null = null
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
@@ -124,9 +131,21 @@ const normalizePhoneCountryCode = (value: string): string => {
 
 const normalizePhoneNumber = (value: string): string => value.replace(/\D/g, "")
 
+const sanitizePhoneE164 = (value?: string): string => {
+  const raw = (value ?? "").trim()
+  if (!raw) return ""
+  const sanitized = raw.replace(/[()\s\-\.]/g, "")
+  if (!sanitized) return ""
+  if (sanitized.includes("+") && !sanitized.startsWith("+")) return sanitized
+  if (!sanitized.startsWith("+")) return `+${sanitized}`
+  return sanitized
+}
+
 const normalizePhoneE164 = (countryCode: string, phoneNumber: string, explicit?: string): string => {
-  const direct = explicit?.trim() ?? ""
-  if (direct.startsWith("+")) return direct
+  const direct = sanitizePhoneE164(explicit)
+  if (direct) return direct
+  const normalizedPhone = normalizePhoneNumber(phoneNumber)
+  if (!normalizedPhone) return ""
   return `${normalizePhoneCountryCode(countryCode)}${normalizePhoneNumber(phoneNumber)}`
 }
 
@@ -148,11 +167,11 @@ const sortByCreatedAtDesc = <T extends { createdAt: string }>(rows: T[]): T[] =>
 
 const seedState = (): MockApiState => {
   const categories: Category[] = [
-    { id: "cat-epp-cabeza-cuerpo", name: "Proteccion Personal (EPP - Cabeza y Cuerpo)" },
-    { id: "cat-extremidades", name: "Proteccion de Extremidades (Manos y Pies)" },
-    { id: "cat-senalizacion-vial", name: "Senalizacion y Seguridad Vial" },
+    { id: "cat-epp-cabeza-cuerpo", name: "Protección Personal (EPP - Cabeza y Cuerpo)" },
+    { id: "cat-extremidades", name: "Protección de Extremidades (Manos y Pies)" },
+    { id: "cat-senalizacion-vial", name: "Señalización y Seguridad Vial" },
     { id: "cat-escritura-papeleria", name: "Consumibles de Escritura y Papeleria" },
-    { id: "cat-impresion-tecnologia", name: "Insumos de Impresion y Tecnologia" },
+    { id: "cat-impresion-tecnologia", name: "Insumos de Impresión y Tecnología" },
   ]
 
   const suppliers: Supplier[] = [
@@ -197,7 +216,7 @@ const seedState = (): MockApiState => {
       id: "prod_001",
       categoryId: "cat-epp-cabeza-cuerpo",
       name: "Casco de seguridad industrial",
-      description: "Casco dielectrico clase E",
+      description: "Casco dieléctrico clase E",
       unit: "unidad",
       isTypical: true,
       isActive: true,
@@ -208,7 +227,7 @@ const seedState = (): MockApiState => {
       id: "prod_006",
       categoryId: "cat-extremidades",
       name: "Guantes anticorte nivel 5",
-      description: "Fibra de alto desempeno",
+      description: "Fibra de alto desempeño",
       unit: "par",
       isTypical: true,
       isActive: true,
@@ -230,7 +249,7 @@ const seedState = (): MockApiState => {
       id: "prod_016",
       categoryId: "cat-escritura-papeleria",
       name: "Resma carta 75g",
-      description: "Papel multiproposito",
+      description: "Papel multipropósito",
       unit: "paquete",
       isTypical: true,
       isActive: true,
@@ -240,7 +259,7 @@ const seedState = (): MockApiState => {
     {
       id: "prod_021",
       categoryId: "cat-impresion-tecnologia",
-      name: "Toner laser negro",
+      name: "Tóner láser negro",
       description: "Compatible HP/Canon",
       unit: "unidad",
       isTypical: true,
@@ -293,7 +312,7 @@ const seedState = (): MockApiState => {
       subtotal,
       tax,
       total,
-      reason: "Reposicion de stock",
+      reason: "Reposición de stock",
       approvedBy: "Juan Perez",
       approvedAt: "2026-02-11T10:30:00.000Z",
       submittedAt: "2026-02-10T14:10:00.000Z",
@@ -340,7 +359,7 @@ const seedState = (): MockApiState => {
     { id: "dept_mantenimiento", name: "Mantenimiento", isActive: true, createdAt: asIso(300), updatedAt: asIso(300) },
     { id: "dept_procura", name: "Compras/Procura", isActive: true, createdAt: asIso(300), updatedAt: asIso(300) },
     { id: "dept_finanzas", name: "Finanzas", isActive: true, createdAt: asIso(300), updatedAt: asIso(300) },
-    { id: "dept_almacen", name: "Almacen", isActive: true, createdAt: asIso(300), updatedAt: asIso(300) },
+    { id: "dept_almacen", name: "Almacén", isActive: true, createdAt: asIso(300), updatedAt: asIso(300) },
   ]
 
   const financePayments: FinancePayment[] = [
@@ -348,7 +367,7 @@ const seedState = (): MockApiState => {
       id: "fpay_seed_001",
       purchaseOrderId: "po_seed_001",
       amount: 250,
-      currency: "VES",
+      currency: "USD",
       paymentType: "contado",
       paymentMode: "transferencia",
       reference: "SEED-001",
@@ -364,7 +383,7 @@ const seedState = (): MockApiState => {
       purchaseOrderId: "po_seed_001",
       financePaymentId: "fpay_seed_001",
       amount: 150,
-      currency: "VES",
+      currency: "USD",
       concept: "Abono complementario",
       createdBy: "user_superadmin",
       createdAt: asIso(6),
@@ -372,12 +391,12 @@ const seedState = (): MockApiState => {
   ]
 
   const securityQuestions: SecurityQuestion[] = [
-    { id: 1, questionText: "Cual es el nombre de tu ciudad de nacimiento?", active: true },
-    { id: 2, questionText: "Cual fue tu primer proyecto laboral?", active: true },
-    { id: 3, questionText: "Cual es el nombre de tu mascota favorita?", active: true },
-    { id: 4, questionText: "Cual es tu pelicula favorita?", active: true },
-    { id: 5, questionText: "Cual es tu lugar favorito para vacacionar?", active: true },
-    { id: 6, questionText: "Cual fue tu primer automovil?", active: true },
+    { id: 1, questionText: "¿Cuál es el nombre de tu ciudad de nacimiento?", active: true },
+    { id: 2, questionText: "¿Cuál fue tu primer proyecto laboral?", active: true },
+    { id: 3, questionText: "¿Cuál es el nombre de tu mascota favorita?", active: true },
+    { id: 4, questionText: "¿Cuál es tu película favorita?", active: true },
+    { id: 5, questionText: "¿Cuál es tu lugar favorito para vacacionar?", active: true },
+    { id: 6, questionText: "¿Cuál fue tu primer automóvil?", active: true },
   ]
 
   const users: MockUserRecord[] = [
@@ -390,8 +409,8 @@ const seedState = (): MockApiState => {
       password: "Admin123!",
       securityQuestions: [
         { questionId: 1, answer: "Admin123!" },
-        { questionId: 2, answer: "CreditosPro" },
-        { questionId: 3, answer: "Operacion" },
+        { questionId: 2, answer: "SYMBIOS" },
+        { questionId: 3, answer: "Operación" },
       ],
     },
     {
@@ -440,7 +459,7 @@ const seedState = (): MockApiState => {
     resetSessions: [],
     securityQuestions,
     companySettings: {
-      name: "Servicios y Mantenimientos AGUILERA21 C.A.",
+      name: "SYMBIOS",
       rif: "J-00000000-0",
       address: "Av. Principal, Caracas",
       phone: "+58 2120000000",
@@ -627,29 +646,43 @@ const validateSupplierPayload = (payload: Record<string, unknown>, mode: "create
   const readText = (key: string) => (typeof payload[key] === "string" ? payload[key].trim() : "")
 
   if (mode === "create") {
-    if (!readText("name")) return "name is required."
-    if (!readText("rif")) return "rif is required."
-    if (!readText("email")) return "email is required."
-    if (!readText("responsible")) return "responsible is required."
+    if (readText("name").length < 3) return "El nombre o razón social debe tener al menos 3 caracteres."
+    if (!readText("rif")) return "El RIF es obligatorio."
+    if (!readText("responsible")) return "El responsable es obligatorio."
   }
 
   if (has("email") && readText("email") && !EMAIL_REGEX.test(readText("email"))) {
-    return "Email invalido."
+    return "Email inválido."
   }
 
   if (has("rif") && readText("rif")) {
     const normalized = normalizeRif(readText("rif"))
     if (!RIF_REGEX.test(normalized)) {
-      return "RIF invalido. Formato esperado: J-########-#."
+      return "RIF inválido. Formato esperado: J-########-#."
     }
   }
 
+  const email = readText("email").toLowerCase()
+  const countryCode = normalizePhoneCountryCode(readText("phoneCountryCode") || "+58")
+  const phoneNumber = normalizePhoneNumber(readText("phoneNumber"))
+  const e164 = normalizePhoneE164(countryCode, phoneNumber, readText("phoneE164") || undefined)
+  const e164Digits = e164.replace(/\D/g, "")
+  const hasPhone = e164.length > 0
+  const hasEmail = email.length > 0
+
+  const contactFieldsProvided =
+    mode === "create" || has("email") || has("phoneCountryCode") || has("phoneNumber") || has("phoneE164")
+
+  if (contactFieldsProvided && !hasPhone && !hasEmail) {
+    return "Debes registrar al menos un medio de contacto: teléfono o email."
+  }
+
   if (has("phoneCountryCode") || has("phoneNumber") || has("phoneE164")) {
-    const countryCode = normalizePhoneCountryCode(readText("phoneCountryCode") || "+58")
-    const phoneNumber = normalizePhoneNumber(readText("phoneNumber"))
-    const e164 = normalizePhoneE164(countryCode, phoneNumber, readText("phoneE164") || undefined)
-    if (!E164_REGEX.test(e164)) {
-      return "Telefono invalido. Debe cumplir formato E.164."
+    if (e164Digits.length > 15) {
+      return "El teléfono no puede superar 15 dígitos (E.164)."
+    }
+    if (hasPhone && !E164_REGEX.test(e164)) {
+      return "Teléfono inválido. Debe cumplir formato E.164."
     }
   }
 
@@ -686,8 +719,8 @@ const normalizeSupplierForCreate = (payload: Record<string, unknown>): Supplier 
     email,
     phoneCountryCode,
     phoneNumber,
-    phoneE164,
-    phone: `${phoneCountryCode} ${phoneNumber}`.trim(),
+    phoneE164: phoneE164 || undefined,
+    phone: phoneNumber ? `${phoneCountryCode} ${phoneNumber}`.trim() : "",
     categoryIds: Array.from(new Set(categoryIds)),
     responsible: String(payload.responsible ?? "").trim(),
     isActive,
@@ -733,8 +766,8 @@ const applySupplierUpdates = (current: Supplier, payload: Record<string, unknown
     )
     next.phoneCountryCode = countryCode
     next.phoneNumber = phoneNumber
-    next.phoneE164 = phoneE164
-    next.phone = `${countryCode} ${phoneNumber}`.trim()
+    next.phoneE164 = phoneE164 || undefined
+    next.phone = phoneNumber ? `${countryCode} ${phoneNumber}`.trim() : ""
   }
 
   if ("isActive" in payload && payload.isActive !== undefined) {
@@ -808,7 +841,7 @@ const recordInventoryEntryForOrder = (state: MockApiState, order: PurchaseOrder,
         id: createId("inv"),
         productId: item.productId,
         stock: 0,
-        location: "Almacen principal",
+        location: "Almacén principal",
         assetType: product?.categoryId ?? "industrial",
         updatedAt: new Date().toISOString(),
       }
@@ -857,7 +890,7 @@ const transitionPurchaseOrder = (
   }
 
   if (!transitions[order.status].includes(nextStatus)) {
-    return `Invalid status transition: ${order.status} -> ${nextStatus}.`
+    return `Transición de estado inválida: ${order.status} -> ${nextStatus}.`
   }
 
   const nowIso = new Date().toISOString()
@@ -871,7 +904,7 @@ const transitionPurchaseOrder = (
     order.rejectionReason = undefined
   } else if (nextStatus === "rejected") {
     if (!reason?.trim()) {
-      return "rejection reason is required."
+      return "La razón de rechazo es obligatoria."
     }
     order.rejectedAt = nowIso
     order.rejectedBy = currentUser.name
@@ -885,6 +918,34 @@ const transitionPurchaseOrder = (
   }
 
   return null
+}
+
+const summarizeInstallmentsByOrder = (rows: FinanceInstallment[]): Record<string, number> => {
+  return rows.reduce<Record<string, number>>((acc, installment) => {
+    acc[installment.purchaseOrderId] = Number(((acc[installment.purchaseOrderId] ?? 0) + Number(installment.amount)).toFixed(2))
+    return acc
+  }, {})
+}
+
+const buildFinanceSummaryForOrder = (order: PurchaseOrder, paidAmount: number): FinanceBalanceSummary => {
+  const totalAmount = Number(Number(order.total).toFixed(2))
+  const paid = Number(Number(paidAmount).toFixed(2))
+  const remainingAmount = Number(Math.max(totalAmount - paid, 0).toFixed(2))
+
+  let status: FinanceBalanceSummary["status"] = "pending"
+  if (remainingAmount <= 0) status = "paid"
+  else if (paid > 0) status = "partial"
+
+  return {
+    purchaseOrderId: order.id,
+    orderNumber: order.orderNumber,
+    supplierName: order.supplierName,
+    totalAmount,
+    paidAmount: paid,
+    remainingAmount,
+    status,
+    currency: "USD",
+  }
 }
 
 const paginate = <T,>(rows: T[], page: number, pageSize: number) => {
@@ -971,13 +1032,13 @@ const buildReportPayload = (state: MockApiState, reportType: string, filters: Re
     }
 
     return {
-      title: "Historico de movimientos",
+      title: "Histórico de movimientos",
       reportType: "movement-history",
       columns: [
         { key: "createdAt", label: "Fecha/Hora" },
         { key: "userName", label: "Usuario" },
         { key: "role", label: "Rol" },
-        { key: "action", label: "Accion" },
+        { key: "action", label: "Acción" },
         { key: "entityType", label: "Entidad" },
         { key: "entityId", label: "ID" },
         { key: "result", label: "Resultado" },
@@ -1015,7 +1076,7 @@ const buildReportPayload = (state: MockApiState, reportType: string, filters: Re
       reportType: "finanzas",
       columns: [
         { key: "type", label: "Tipo" },
-        { key: "number", label: "Numero" },
+        { key: "number", label: "Número" },
         { key: "purchaseOrder", label: "OC" },
         { key: "amount", label: "Monto" },
         { key: "currency", label: "Moneda" },
@@ -1051,7 +1112,7 @@ const buildReportPayload = (state: MockApiState, reportType: string, filters: Re
     }))
 
     return {
-      title: "Reporte de Ordenes de Compra",
+      title: "Reporte de Órdenes de Compra",
       reportType: "purchase-orders",
       columns: [
         { key: "orderNumber", label: "OC" },
@@ -1211,12 +1272,12 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/auth/login") {
-    if (!isObject(body)) return failure(422, "Invalid login payload.")
+    if (!isObject(body)) return failure(422, "Payload de inicio de sesión inválido.")
     const email = String(body.email ?? "").trim().toLowerCase()
     const password = String(body.password ?? "").trim()
     const user = state.users.find((item) => item.email.toLowerCase() === email)
     if (!user || user.password !== password) {
-      return failure(401, "Invalid credentials.")
+      return failure(401, "Credenciales inválidas.")
     }
 
     const token = createId("token")
@@ -1226,17 +1287,17 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/auth/password-recovery/start") {
-    if (!isObject(body)) return failure(422, "identifier is required.")
+    if (!isObject(body)) return failure(422, "identifier es requerido.")
     const identifier = String(body.identifier ?? "").trim().toLowerCase()
-    if (!identifier) return failure(422, "identifier is required.")
+    if (!identifier) return failure(422, "identifier es requerido.")
 
     const user = state.users.find(
       (item) => item.email.toLowerCase() === identifier || item.name.toLowerCase() === identifier,
     )
-    if (!user) return failure(404, "User not found.")
+    if (!user) return failure(404, "Usuario no encontrado.")
 
     const assigned = user.securityQuestions.slice(0, 3)
-    if (assigned.length < 1) return failure(422, "User has no configured security questions.")
+    if (assigned.length < 1) return failure(422, "El usuario no tiene preguntas de seguridad configuradas.")
 
     const recoveryToken = createId("recovery")
     const expiresAt = new Date(Date.now() + MOCK_SESSION_RECOVERY_MINUTES * 60 * 1000).toISOString()
@@ -1273,13 +1334,13 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/auth/password-recovery/verify") {
-    if (!isObject(body)) return failure(422, "Invalid recovery payload.")
+    if (!isObject(body)) return failure(422, "Payload de recuperación inválido.")
     const recoveryToken = String(body.recoveryToken ?? "").trim()
     const answers = Array.isArray(body.answers) ? body.answers : []
     const session = state.recoverySessions.find((item) => item.token === recoveryToken)
-    if (!session) return failure(401, "Recovery session expired.")
+    if (!session) return failure(401, "La sesión de recuperación expiró.")
     const user = state.users.find((item) => item.id === session.userId)
-    if (!user) return failure(404, "User not found.")
+    if (!user) return failure(404, "Usuario no encontrado.")
 
     const answersByQuestion = new Map<number, string>()
     for (const entry of answers) {
@@ -1292,14 +1353,14 @@ export const mockApiRequest = async (
     }
 
     const allAnswered = session.questionIds.every((questionId) => answersByQuestion.has(questionId))
-    if (!allAnswered) return failure(422, "All questions must be answered.")
+    if (!allAnswered) return failure(422, "Debes responder todas las preguntas.")
 
     const isValid = session.questionIds.every((questionId) => {
       const expected = user.securityQuestions.find((item) => item.questionId === questionId)?.answer ?? ""
       const received = answersByQuestion.get(questionId) ?? ""
       return expected === received
     })
-    if (!isValid) return failure(401, "Security answers did not match.")
+    if (!isValid) return failure(401, "Las respuestas de seguridad no coinciden.")
 
     const resetToken = createId("reset")
     const expiresAt = new Date(Date.now() + MOCK_SESSION_RESET_MINUTES * 60 * 1000).toISOString()
@@ -1310,16 +1371,16 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/auth/password-recovery/reset") {
-    if (!isObject(body)) return failure(422, "Invalid reset payload.")
+    if (!isObject(body)) return failure(422, "Payload de restablecimiento inválido.")
     const resetToken = String(body.resetToken ?? "").trim()
     const newPassword = String(body.newPassword ?? "")
     if (newPassword.trim().length < 8) {
-      return failure(422, "New password must have at least 8 characters.")
+      return failure(422, "La nueva contraseña debe tener al menos 8 caracteres.")
     }
     const resetSession = state.resetSessions.find((item) => item.token === resetToken)
-    if (!resetSession) return failure(401, "Reset session expired.")
+    if (!resetSession) return failure(401, "La sesión de restablecimiento expiró.")
     const user = state.users.find((item) => item.id === resetSession.userId)
-    if (!user) return failure(404, "User not found.")
+    if (!user) return failure(404, "Usuario no encontrado.")
     user.password = newPassword
     state.resetSessions = state.resetSessions.filter((item) => item.token !== resetToken)
     saveState(state)
@@ -1328,11 +1389,11 @@ export const mockApiRequest = async (
 
   const currentUser = getCurrentUser(state, headers)
   if (!publicRoutes.has(routeKey) && !currentUser && routeKey !== "POST:/auth/logout") {
-    return failure(401, "Invalid token.")
+    return failure(401, "Token inválido.")
   }
 
   if (routeKey === "GET:/auth/me") {
-    if (!currentUser) return failure(401, "Invalid token.")
+    if (!currentUser) return failure(401, "Token inválido.")
     return success(wrapData(toPublicUser(currentUser)), 200)
   }
 
@@ -1350,9 +1411,9 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/categories") {
-    if (!isObject(body)) return failure(422, "name is required.")
+    if (!isObject(body)) return failure(422, "name es requerido.")
     const name = String(body.name ?? "").trim()
-    if (!name) return failure(422, "name is required.")
+    if (!name) return failure(422, "name es requerido.")
     const existing = state.categories.find((item) => item.name.toLowerCase() === name.toLowerCase())
     if (existing) return success(wrapData(existing), 201)
     const category: Category = { id: createId("cat"), name }
@@ -1369,16 +1430,18 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/suppliers") {
-    if (!currentUser) return failure(401, "Invalid token.")
-    if (!isObject(body)) return failure(422, "Invalid supplier payload.")
+    if (!currentUser) return failure(401, "Token inválido.")
+    if (!isObject(body)) return failure(422, "Payload de proveedor inválido.")
     const validationError = validateSupplierPayload(body, "create")
     if (validationError) return failure(422, validationError)
 
     const candidate = normalizeSupplierForCreate(body)
-    const duplicateEmail = state.suppliers.find((item) => item.email.toLowerCase() === candidate.email.toLowerCase())
-    if (duplicateEmail) return failure(409, "Email already exists.")
+    const duplicateEmail = candidate.email
+      ? state.suppliers.find((item) => item.email.toLowerCase() === candidate.email.toLowerCase())
+      : null
+    if (duplicateEmail) return failure(409, "El email ya existe.")
     const duplicateRif = state.suppliers.find((item) => item.rif.toLowerCase() === candidate.rif.toLowerCase())
-    if (duplicateRif) return failure(409, "RIF already exists.")
+    if (duplicateRif) return failure(409, "El RIF ya existe.")
 
     state.suppliers = [candidate, ...state.suppliers]
     appendMonitoringEvent(state, currentUser, "supplier_create", "supplier", candidate.id, {
@@ -1394,29 +1457,32 @@ export const mockApiRequest = async (
   if (supplierItemMatch && methodUpper === "GET") {
     const supplierId = decodeURIComponent(supplierItemMatch[1])
     const supplier = state.suppliers.find((item) => item.id === supplierId)
-    if (!supplier) return failure(404, "Supplier not found.")
+    if (!supplier) return failure(404, "Proveedor no encontrado.")
     return success(wrapData(supplier), 200)
   }
 
   if (supplierItemMatch && methodUpper === "PUT") {
-    if (!currentUser) return failure(401, "Invalid token.")
-    if (!isObject(body)) return failure(422, "Invalid supplier payload.")
+    if (!currentUser) return failure(401, "Token inválido.")
+    if (!isObject(body)) return failure(422, "Payload de proveedor inválido.")
     const supplierId = decodeURIComponent(supplierItemMatch[1])
     const current = state.suppliers.find((item) => item.id === supplierId)
-    if (!current) return failure(404, "Supplier not found.")
+    if (!current) return failure(404, "Proveedor no encontrado.")
 
     const validationError = validateSupplierPayload(body, "update")
     if (validationError) return failure(422, validationError)
 
     const preview = applySupplierUpdates(current, body)
-    const duplicateEmail = state.suppliers.find(
-      (item) => item.id !== supplierId && item.email.toLowerCase() === preview.email.toLowerCase(),
-    )
-    if (duplicateEmail) return failure(409, "Email already exists.")
+    if (!preview.email && !preview.phoneE164) {
+      return failure(422, "Debes registrar al menos un medio de contacto: teléfono o email.")
+    }
+    const duplicateEmail = preview.email
+      ? state.suppliers.find((item) => item.id !== supplierId && item.email.toLowerCase() === preview.email.toLowerCase())
+      : null
+    if (duplicateEmail) return failure(409, "El email ya existe.")
     const duplicateRif = state.suppliers.find(
       (item) => item.id !== supplierId && item.rif.toLowerCase() === preview.rif.toLowerCase(),
     )
-    if (duplicateRif) return failure(409, "RIF already exists.")
+    if (duplicateRif) return failure(409, "El RIF ya existe.")
 
     state.suppliers = state.suppliers.map((item) => (item.id === supplierId ? preview : item))
     appendMonitoringEvent(state, currentUser, "supplier_update", "supplier", supplierId, body)
@@ -1425,10 +1491,10 @@ export const mockApiRequest = async (
   }
 
   if (supplierItemMatch && methodUpper === "DELETE") {
-    if (!currentUser) return failure(401, "Invalid token.")
+    if (!currentUser) return failure(401, "Token inválido.")
     const supplierId = decodeURIComponent(supplierItemMatch[1])
     const supplier = state.suppliers.find((item) => item.id === supplierId)
-    if (!supplier) return failure(404, "Supplier not found.")
+    if (!supplier) return failure(404, "Proveedor no encontrado.")
     state.suppliers = state.suppliers.map((item) =>
       item.id === supplierId ? { ...item, isActive: false, status: "inactive" } : item,
     )
@@ -1439,11 +1505,11 @@ export const mockApiRequest = async (
 
   const supplierStateMatch = pathname.match(/^\/suppliers\/([^/]+)\/(activate|deactivate)$/)
   if (supplierStateMatch && methodUpper === "POST") {
-    if (!currentUser) return failure(401, "Invalid token.")
+    if (!currentUser) return failure(401, "Token inválido.")
     const supplierId = decodeURIComponent(supplierStateMatch[1])
     const action = supplierStateMatch[2]
     const supplier = state.suppliers.find((item) => item.id === supplierId)
-    if (!supplier) return failure(404, "Supplier not found.")
+    if (!supplier) return failure(404, "Proveedor no encontrado.")
 
     const isActive = action === "activate"
     const updated = { ...supplier, isActive, status: isActive ? "active" : "inactive" as Supplier["status"] }
@@ -1511,12 +1577,12 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/purchase-orders") {
-    if (!currentUser) return failure(401, "Invalid token.")
-    if (!isObject(body)) return failure(422, "Invalid purchase order payload.")
+    if (!currentUser) return failure(401, "Token inválido.")
+    if (!isObject(body)) return failure(422, "Payload de orden de compra inválido.")
 
     const supplierId = String(body.supplierId ?? "").trim()
     const supplier = state.suppliers.find((item) => item.id === supplierId)
-    if (!supplier) return failure(404, "Supplier not found.")
+    if (!supplier) return failure(404, "Proveedor no encontrado.")
 
     const orderDate = parseDateInput(body.date)
     if (!orderDate) return failure(422, "date has an invalid value.")
@@ -1562,17 +1628,17 @@ export const mockApiRequest = async (
   if (purchaseOrderMatch && methodUpper === "GET") {
     const orderId = decodeURIComponent(purchaseOrderMatch[1])
     const order = state.purchaseOrders.find((item) => item.id === orderId)
-    if (!order) return failure(404, "Purchase order not found.")
+    if (!order) return failure(404, "Orden de compra no encontrada.")
     return success(wrapData(order), 200)
   }
 
   const purchaseOrderActionMatch = pathname.match(/^\/purchase-orders\/([^/]+)\/(submit|approve|reject|certify|receive)$/)
   if (purchaseOrderActionMatch && methodUpper === "POST") {
-    if (!currentUser) return failure(401, "Invalid token.")
+    if (!currentUser) return failure(401, "Token inválido.")
     const orderId = decodeURIComponent(purchaseOrderActionMatch[1])
     const action = purchaseOrderActionMatch[2]
     const order = state.purchaseOrders.find((item) => item.id === orderId)
-    if (!order) return failure(404, "Purchase order not found.")
+    if (!order) return failure(404, "Orden de compra no encontrada.")
 
     const reason = isObject(body) && typeof body.reason === "string" ? body.reason : undefined
     const statusMap: Record<string, PurchaseOrder["status"]> = {
@@ -1596,18 +1662,18 @@ export const mockApiRequest = async (
 
   const purchaseOrderRemoveItemMatch = pathname.match(/^\/purchase-orders\/([^/]+)\/items\/([^/]+)\/remove$/)
   if (purchaseOrderRemoveItemMatch && methodUpper === "POST") {
-    if (!currentUser) return failure(401, "Invalid token.")
-    if (!isObject(body)) return failure(422, "reason is required.")
+    if (!currentUser) return failure(401, "Token inválido.")
+    if (!isObject(body)) return failure(422, "reason es requerido.")
 
     const orderId = decodeURIComponent(purchaseOrderRemoveItemMatch[1])
     const itemId = decodeURIComponent(purchaseOrderRemoveItemMatch[2])
     const reason = String(body.reason ?? "").trim()
-    if (!reason) return failure(422, "reason is required.")
+    if (!reason) return failure(422, "reason es requerido.")
 
     const order = state.purchaseOrders.find((item) => item.id === orderId)
-    if (!order) return failure(404, "Purchase order not found.")
+    if (!order) return failure(404, "Orden de compra no encontrada.")
     if (order.status !== "pending" && order.status !== "approved") {
-      return failure(422, "Items can only be removed while order is pending or approved.")
+      return failure(422, "Los ítems solo pueden eliminarse cuando la orden está pendiente o aprobada.")
     }
 
     let found = false
@@ -1621,7 +1687,7 @@ export const mockApiRequest = async (
         removedBySuperadminReason: reason,
       }
     })
-    if (!found) return failure(404, "Purchase order item not found.")
+    if (!found) return failure(404, "Ítem de orden de compra no encontrado.")
     const totals = computePurchaseOrderTotals(order.items)
     order.subtotal = totals.subtotal
     order.tax = totals.tax
@@ -1665,14 +1731,14 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/inventory/movements/in") {
-    if (!currentUser) return failure(401, "Invalid token.")
-    if (!isObject(body)) return failure(422, "Invalid movement payload.")
+    if (!currentUser) return failure(401, "Token inválido.")
+    if (!isObject(body)) return failure(422, "Payload de movimiento inválido.")
     const productId = String(body.productId ?? "").trim()
     const qty = Number(body.qty)
-    if (!productId) return failure(422, "productId is required.")
-    if (!Number.isFinite(qty) || qty <= 0) return failure(422, "qty must be greater than zero.")
+    if (!productId) return failure(422, "productId es requerido.")
+    if (!Number.isFinite(qty) || qty <= 0) return failure(422, "qty debe ser mayor a cero.")
     const product = state.products.find((item) => item.id === productId)
-    if (!product) return failure(404, "Product not found.")
+    if (!product) return failure(404, "Producto no encontrado.")
 
     let inventoryItem = state.inventoryItems.find((item) => item.productId === productId)
     if (!inventoryItem) {
@@ -1680,7 +1746,7 @@ export const mockApiRequest = async (
         id: createId("inv"),
         productId,
         stock: 0,
-        location: "Almacen principal",
+        location: "Almacén principal",
         assetType: product.categoryId,
         updatedAt: new Date().toISOString(),
       }
@@ -1711,22 +1777,22 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/inventory/movements/out") {
-    if (!currentUser) return failure(401, "Invalid token.")
-    if (!isObject(body)) return failure(422, "Invalid movement payload.")
+    if (!currentUser) return failure(401, "Token inválido.")
+    if (!isObject(body)) return failure(422, "Payload de movimiento inválido.")
     const productId = String(body.productId ?? "").trim()
     const qty = Number(body.qty)
     const departmentId = String(body.departmentId ?? "").trim()
     const reason = String(body.reason ?? "").trim()
 
-    if (!productId) return failure(422, "productId is required.")
-    if (!departmentId) return failure(422, "departmentId is required.")
-    if (!reason) return failure(422, "reason is required.")
-    if (!Number.isFinite(qty) || qty <= 0) return failure(422, "qty must be greater than zero.")
+    if (!productId) return failure(422, "productId es requerido.")
+    if (!departmentId) return failure(422, "departmentId es requerido.")
+    if (!reason) return failure(422, "reason es requerido.")
+    if (!Number.isFinite(qty) || qty <= 0) return failure(422, "qty debe ser mayor a cero.")
 
     const product = state.products.find((item) => item.id === productId)
-    if (!product) return failure(404, "Product not found.")
+    if (!product) return failure(404, "Producto no encontrado.")
     const department = state.departments.find((item) => item.id === departmentId && item.isActive)
-    if (!department) return failure(422, "departmentId is invalid or inactive.")
+    if (!department) return failure(422, "departmentId es inválido o está inactivo.")
 
     let inventoryItem = state.inventoryItems.find((item) => item.productId === productId)
     if (!inventoryItem) {
@@ -1734,13 +1800,13 @@ export const mockApiRequest = async (
         id: createId("inv"),
         productId,
         stock: 0,
-        location: "Almacen principal",
+        location: "Almacén principal",
         assetType: product.categoryId,
         updatedAt: new Date().toISOString(),
       }
       state.inventoryItems = [inventoryItem, ...state.inventoryItems]
     }
-    if (inventoryItem.stock < qty) return failure(422, "Insufficient stock.")
+    if (inventoryItem.stock < qty) return failure(422, "Stock insuficiente.")
 
     inventoryItem.stock = Number((inventoryItem.stock - qty).toFixed(2))
     inventoryItem.updatedAt = new Date().toISOString()
@@ -1773,6 +1839,21 @@ export const mockApiRequest = async (
     return success(wrapData(rows), 200)
   }
 
+  if (routeKey === "GET:/finanzas/resumen") {
+    const purchaseOrderId = url.searchParams.get("purchaseOrderId")?.trim() ?? ""
+    const orders = purchaseOrderId
+      ? state.purchaseOrders.filter((item) => item.id === purchaseOrderId)
+      : [...state.purchaseOrders]
+    if (purchaseOrderId && orders.length === 0) return failure(404, "Orden de compra no encontrada.")
+
+    const paidByOrder = summarizeInstallmentsByOrder(state.financeInstallments)
+    const summaries = orders
+      .sort((left, right) => right.date.localeCompare(left.date))
+      .map((order) => buildFinanceSummaryForOrder(order, paidByOrder[order.id] ?? 0))
+
+    return success(wrapData(summaries), 200)
+  }
+
   if (routeKey === "GET:/finanzas/pagos") {
     const purchaseOrderId = url.searchParams.get("purchaseOrderId")?.trim() ?? ""
     const rows = purchaseOrderId
@@ -1782,25 +1863,26 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/finanzas/pagos") {
-    if (!currentUser) return failure(401, "Invalid token.")
-    if (!isObject(body)) return failure(422, "Invalid finance payload.")
+    if (!currentUser) return failure(401, "Token inválido.")
+    if (!isObject(body)) return failure(422, "Payload financiero inválido.")
     const purchaseOrderId = String(body.purchaseOrderId ?? "").trim()
     const amount = Number(body.amount)
     const paymentType = String(body.paymentType ?? "").trim().toLowerCase()
     const paymentMode = String(body.paymentMode ?? "").trim()
-    if (!purchaseOrderId) return failure(422, "purchaseOrderId is required.")
-    if (!Number.isFinite(amount) || amount <= 0) return failure(422, "amount must be > 0.")
-    if (!["contado", "credito"].includes(paymentType)) return failure(422, "paymentType must be contado or credito.")
-    if (paymentType === "contado" && !paymentMode) return failure(422, "paymentMode is required for contado payments.")
+    if (!purchaseOrderId) return failure(422, "purchaseOrderId es requerido.")
+    if (!Number.isFinite(amount) || amount <= 0) return failure(422, "El monto debe ser mayor a 0.")
+    if (!["contado", "credito"].includes(paymentType)) return failure(422, "El tipo de pago debe ser contado o crédito.")
+    if (paymentType === "contado" && !paymentMode) return failure(422, "El modo de pago es obligatorio para pagos de contado.")
+    if (!normalizeCurrencyUsd(body.currency)) return failure(422, "La moneda admitida es USD.")
 
     const order = state.purchaseOrders.find((item) => item.id === purchaseOrderId)
-    if (!order) return failure(404, "Purchase order not found.")
+    if (!order) return failure(404, "Orden de compra no encontrada.")
 
     const payment: FinancePayment = {
       id: createId("fpay"),
       purchaseOrderId,
       amount: Number(amount.toFixed(2)),
-      currency: String(body.currency ?? "VES").trim().toUpperCase() || "VES",
+      currency: "USD",
       paymentType: paymentType as FinancePayment["paymentType"],
       paymentMode,
       reference: typeof body.reference === "string" ? body.reference : undefined,
@@ -1827,20 +1909,28 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/finanzas/abonos") {
-    if (!currentUser) return failure(401, "Invalid token.")
-    if (!isObject(body)) return failure(422, "Invalid finance payload.")
+    if (!currentUser) return failure(401, "Token inválido.")
+    if (!isObject(body)) return failure(422, "Payload financiero inválido.")
     const purchaseOrderId = String(body.purchaseOrderId ?? "").trim()
     const amount = Number(body.amount)
-    if (!purchaseOrderId) return failure(422, "purchaseOrderId is required.")
-    if (!Number.isFinite(amount) || amount <= 0) return failure(422, "amount must be > 0.")
+    if (!purchaseOrderId) return failure(422, "purchaseOrderId es requerido.")
+    if (!Number.isFinite(amount) || amount <= 0) return failure(422, "El abono debe ser mayor a 0.")
+    if (!normalizeCurrencyUsd(body.currency)) return failure(422, "La moneda admitida es USD.")
 
     const order = state.purchaseOrders.find((item) => item.id === purchaseOrderId)
-    if (!order) return failure(404, "Purchase order not found.")
+    if (!order) return failure(404, "Orden de compra no encontrada.")
 
     const financePaymentId = typeof body.financePaymentId === "string" ? body.financePaymentId : null
     if (financePaymentId) {
       const payment = state.financePayments.find((item) => item.id === financePaymentId)
-      if (!payment) return failure(404, "financePaymentId not found.")
+      if (!payment) return failure(404, "financePaymentId no encontrado.")
+    }
+
+    const paidByOrder = summarizeInstallmentsByOrder(state.financeInstallments)
+    const currentSummary = buildFinanceSummaryForOrder(order, paidByOrder[order.id] ?? 0)
+    if (currentSummary.remainingAmount <= 0) return failure(422, "La orden ya está pagada.")
+    if (amount > currentSummary.remainingAmount) {
+      return failure(422, "El abono no puede superar el saldo restante.")
     }
 
     const installment: FinanceInstallment = {
@@ -1848,7 +1938,7 @@ export const mockApiRequest = async (
       purchaseOrderId,
       financePaymentId,
       amount: Number(amount.toFixed(2)),
-      currency: String(body.currency ?? "VES").trim().toUpperCase() || "VES",
+      currency: "USD",
       concept: typeof body.concept === "string" ? body.concept : undefined,
       createdBy: currentUser.id,
       createdAt: new Date().toISOString(),
@@ -1859,7 +1949,8 @@ export const mockApiRequest = async (
       amount: installment.amount,
     })
     saveState(state)
-    return success(wrapData(installment), 201)
+    const nextSummary = buildFinanceSummaryForOrder(order, (paidByOrder[order.id] ?? 0) + installment.amount)
+    return success(wrapData({ ...installment, balance: nextSummary }), 201)
   }
 
   if (routeKey === "GET:/monitoring/movements") {
@@ -1888,7 +1979,7 @@ export const mockApiRequest = async (
     const reportType = decodeURIComponent(reportGetMatch[1])
     const filters = buildFiltersFromQuery(url.searchParams)
     const payload = buildReportPayload(state, reportType, filters)
-    if (!payload) return failure(404, "Report not found.")
+    if (!payload) return failure(404, "Reporte no encontrado.")
     return success(wrapData(payload), 200)
   }
 
@@ -1897,7 +1988,7 @@ export const mockApiRequest = async (
     const reportType = decodeURIComponent(reportPdfMatch[1])
     const filters = isObject(body) ? (body as Record<string, unknown>) : {}
     const payload = buildReportPayload(state, reportType, filters)
-    if (!payload) return failure(404, "Report not found.")
+    if (!payload) return failure(404, "Reporte no encontrado.")
     const base64 = buildSimplePdfBase64(payload.title, `Registros: ${payload.rows.length}`)
     return success(
       wrapData({
@@ -1917,7 +2008,7 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "PUT:/company-settings") {
-    if (!isObject(body)) return failure(422, "Invalid company settings payload.")
+    if (!isObject(body)) return failure(422, "Payload de configuración de compañía inválido.")
     const next: CompanySettings = {
       name: String(body.name ?? "").trim(),
       rif: String(body.rif ?? "").trim(),
@@ -1947,30 +2038,30 @@ export const mockApiRequest = async (
   }
 
   if (routeKey === "POST:/users") {
-    if (!isObject(body)) return failure(422, "Invalid user payload.")
+    if (!isObject(body)) return failure(422, "Payload de usuario inválido.")
     const name = String(body.name ?? "").trim()
     const email = String(body.email ?? "").trim().toLowerCase()
     const role = normalizeRole(body.role)
     const password = String(body.password ?? "")
     const securityPayload = Array.isArray(body.securityQuestions) ? body.securityQuestions : []
     if (!name) return failure(422, "El nombre es requerido.")
-    if (!EMAIL_REGEX.test(email)) return failure(422, "Email invalido.")
-    if (password.trim().length < 6) return failure(422, "La contrasena debe tener al menos 6 caracteres.")
-    if (securityPayload.length !== 3) return failure(422, "Exactly 3 security questions are required.")
-    if (state.users.some((item) => item.email.toLowerCase() === email)) return failure(409, "Email already exists.")
+    if (!EMAIL_REGEX.test(email)) return failure(422, "Email inválido.")
+    if (password.trim().length < 6) return failure(422, "La contraseña debe tener al menos 6 caracteres.")
+    if (securityPayload.length !== 3) return failure(422, "Se requieren exactamente 3 preguntas de seguridad.")
+    if (state.users.some((item) => item.email.toLowerCase() === email)) return failure(409, "El email ya existe.")
 
     const securityQuestions: MockSecurityAnswer[] = []
     for (const item of securityPayload) {
-      if (!isObject(item)) return failure(422, "Invalid security questions.")
+      if (!isObject(item)) return failure(422, "Preguntas de seguridad inválidas.")
       const questionId = Number(item.questionId)
       const answer = String(item.answer ?? "").trim()
       const questionExists = state.securityQuestions.some((question) => question.id === questionId && question.active)
-      if (!Number.isFinite(questionId) || !questionExists) return failure(422, "Invalid security questions.")
-      if (answer.length < 2) return failure(422, "Each security answer must have at least 2 characters.")
+      if (!Number.isFinite(questionId) || !questionExists) return failure(422, "Preguntas de seguridad inválidas.")
+      if (answer.length < 2) return failure(422, "Cada respuesta de seguridad debe tener al menos 2 caracteres.")
       securityQuestions.push({ questionId, answer })
     }
     if (new Set(securityQuestions.map((item) => item.questionId)).size !== 3) {
-      return failure(422, "Security questions must be unique.")
+      return failure(422, "Las preguntas de seguridad deben ser únicas.")
     }
 
     const user: MockUserRecord = {
@@ -1994,7 +2085,7 @@ export const mockApiRequest = async (
   if (userSecurityMatch && methodUpper === "GET") {
     const userId = decodeURIComponent(userSecurityMatch[1])
     const user = state.users.find((item) => item.id === userId)
-    if (!user) return failure(404, "User not found.")
+    if (!user) return failure(404, "Usuario no encontrado.")
     const rows = user.securityQuestions
       .map((item) => {
         const question = state.securityQuestions.find((questionItem) => questionItem.id === item.questionId)
@@ -2007,15 +2098,15 @@ export const mockApiRequest = async (
 
   const userItemMatch = pathname.match(/^\/users\/([^/]+)$/)
   if (userItemMatch && methodUpper === "PUT") {
-    if (!isObject(body)) return failure(422, "Invalid user payload.")
+    if (!isObject(body)) return failure(422, "Payload de usuario inválido.")
     const userId = decodeURIComponent(userItemMatch[1])
     const user = state.users.find((item) => item.id === userId)
-    if (!user) return failure(404, "User not found.")
+    if (!user) return failure(404, "Usuario no encontrado.")
 
     const nextEmail = "email" in body ? String(body.email ?? "").trim().toLowerCase() : user.email
-    if ("email" in body && !EMAIL_REGEX.test(nextEmail)) return failure(422, "Email invalido.")
+    if ("email" in body && !EMAIL_REGEX.test(nextEmail)) return failure(422, "Email inválido.")
     const duplicate = state.users.find((item) => item.id !== userId && item.email.toLowerCase() === nextEmail.toLowerCase())
-    if (duplicate) return failure(409, "Email already exists.")
+    if (duplicate) return failure(409, "El email ya existe.")
 
     if ("name" in body && String(body.name ?? "").trim()) user.name = String(body.name).trim()
     if ("email" in body) user.email = nextEmail
@@ -2024,19 +2115,19 @@ export const mockApiRequest = async (
 
     if ("securityQuestions" in body && body.securityQuestions !== undefined) {
       const securityPayload = Array.isArray(body.securityQuestions) ? body.securityQuestions : []
-      if (securityPayload.length !== 3) return failure(422, "Exactly 3 security questions are required.")
+      if (securityPayload.length !== 3) return failure(422, "Se requieren exactamente 3 preguntas de seguridad.")
       const securityQuestions: MockSecurityAnswer[] = []
       for (const item of securityPayload) {
-        if (!isObject(item)) return failure(422, "Invalid security questions.")
+        if (!isObject(item)) return failure(422, "Preguntas de seguridad inválidas.")
         const questionId = Number(item.questionId)
         const answer = String(item.answer ?? "").trim()
         const questionExists = state.securityQuestions.some((question) => question.id === questionId && question.active)
-        if (!Number.isFinite(questionId) || !questionExists) return failure(422, "Invalid security questions.")
-        if (answer.length < 2) return failure(422, "Each security answer must have at least 2 characters.")
+        if (!Number.isFinite(questionId) || !questionExists) return failure(422, "Preguntas de seguridad inválidas.")
+        if (answer.length < 2) return failure(422, "Cada respuesta de seguridad debe tener al menos 2 caracteres.")
         securityQuestions.push({ questionId, answer })
       }
       if (new Set(securityQuestions.map((item) => item.questionId)).size !== 3) {
-        return failure(422, "Security questions must be unique.")
+        return failure(422, "Las preguntas de seguridad deben ser únicas.")
       }
       user.securityQuestions = securityQuestions
       if (currentUser) {
@@ -2052,11 +2143,11 @@ export const mockApiRequest = async (
   }
 
   if (userItemMatch && methodUpper === "DELETE") {
-    if (!currentUser) return failure(401, "Invalid token.")
+    if (!currentUser) return failure(401, "Token inválido.")
     const userId = decodeURIComponent(userItemMatch[1])
-    if (currentUser.id === userId) return failure(422, "Cannot delete current user.")
+    if (currentUser.id === userId) return failure(422, "No puedes eliminar al usuario actual.")
     const exists = state.users.some((item) => item.id === userId)
-    if (!exists) return failure(404, "User not found.")
+    if (!exists) return failure(404, "Usuario no encontrado.")
     state.users = state.users.filter((item) => item.id !== userId)
     state.sessions = state.sessions.filter((item) => item.userId !== userId)
     appendMonitoringEvent(state, currentUser, "user_delete", "user", userId, {})
@@ -2068,5 +2159,5 @@ export const mockApiRequest = async (
     return success(wrapData(state.securityQuestions.filter((item) => item.active)), 200)
   }
 
-  return failure(404, `Mock endpoint not found: ${methodUpper} ${pathname}`)
+  return failure(404, `Endpoint mock no encontrado: ${methodUpper} ${pathname}`)
 }

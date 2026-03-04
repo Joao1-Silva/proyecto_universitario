@@ -141,11 +141,11 @@ def login(payload: AuthLoginRequest, request: Request, session: Session = Depend
             metadata={"reason": "invalid_credentials"},
             request=request,
             user_id=user.id if user else "anonymous",
-            user_name=user.name if user else "Anonimo",
+            user_name=user.name if user else "Anónimo",
             role=user.role if user else "system",
         )
         session.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas.")
 
     if not is_password_hash(user.password):
         user.password = hash_secret(password)
@@ -171,7 +171,7 @@ def login(payload: AuthLoginRequest, request: Request, session: Session = Depend
 def me(current_user: AuthenticatedUser = Depends(get_current_user), session: Session = Depends(get_db)) -> dict:
     user = session.get(UserModel, current_user.id)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido.")
     return {"data": _to_user_read(user), "meta": {"source": "api"}}
 
 
@@ -215,7 +215,7 @@ def password_recovery_start(
     _cleanup_expired_sessions()
     identifier = _resolve_identifier(payload.identifier)
     if not identifier:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="identifier is required.")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="El identificador es obligatorio.")
 
     user = session.execute(
         select(UserModel).where(
@@ -226,7 +226,7 @@ def password_recovery_start(
         )
     ).scalar_one_or_none()
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
 
     question_rows = session.execute(
         select(UserSecurityQuestionModel.question_id, SecurityQuestionModel.question_text)
@@ -240,7 +240,7 @@ def password_recovery_start(
     if len(question_rows) < 1:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="User has no configured security questions.",
+            detail="El usuario no tiene preguntas de seguridad configuradas.",
         )
 
     settings = get_settings()
@@ -289,12 +289,12 @@ def password_recovery_verify(
     recovery = _recovery_sessions.get(payload.recoveryToken)
     if recovery is None or recovery.expires_at <= datetime.utcnow():
         _recovery_sessions.pop(payload.recoveryToken, None)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Recovery session expired.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="La sesión de recuperación expiró.")
 
     user = session.get(UserModel, recovery.user_id)
     if user is None:
         _recovery_sessions.pop(payload.recoveryToken, None)
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
 
     identifier = user.email.lower()
     ip_address = request.client.host if request.client and request.client.host else "unknown"
@@ -320,12 +320,12 @@ def password_recovery_verify(
         session.commit()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many recovery attempts. Try again later.",
+            detail="Demasiados intentos de recuperación. Intenta nuevamente más tarde.",
         )
 
     answers_by_question = {int(item.questionId): item.answer for item in payload.answers}
     if any(question_id not in answers_by_question for question_id in recovery.question_ids):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="All questions must be answered.")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Debes responder todas las preguntas.")
 
     stored_answers = session.execute(
         select(UserSecurityQuestionModel)
@@ -361,7 +361,7 @@ def password_recovery_verify(
             role=user.role,
         )
         session.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Security answers did not match.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Las respuestas de seguridad no coinciden.")
 
     settings = get_settings()
     reset_token = f"reset_{uuid4()}"
@@ -405,19 +405,19 @@ def password_recovery_reset(
     reset_session = _reset_sessions.get(payload.resetToken)
     if reset_session is None or reset_session.expires_at <= datetime.utcnow():
         _reset_sessions.pop(payload.resetToken, None)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Reset session expired.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="La sesión de restablecimiento expiró.")
 
     new_password = payload.newPassword.strip()
     if len(new_password) < 8:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="New password must have at least 8 characters.",
+            detail="La nueva contraseña debe tener al menos 8 caracteres.",
         )
 
     user = session.get(UserModel, reset_session.user_id)
     if user is None:
         _reset_sessions.pop(payload.resetToken, None)
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
 
     user.password = hash_secret(new_password)
     _reset_sessions.pop(payload.resetToken, None)

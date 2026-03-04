@@ -24,7 +24,7 @@ import { roleLabel } from "@/lib/permissions"
 import { getCurrentUser, signOut, useAppStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
-const SYSTEM_NAME = "Sistema de Gestion Administrativa de activos industriales en Servicios y Mantenimientos AGUILERA21 C.A."
+const SYSTEM_NAME = "SYMBIOS"
 
 const buildInitials = (name?: string) => {
   if (!name) return "--"
@@ -150,7 +150,7 @@ export function TopNav() {
 
                 {searchResults.purchaseOrders.length > 0 && (
                   <div>
-                    <p className="px-3 text-xs font-medium text-muted-foreground">Ordenes de Compra</p>
+                    <p className="px-3 text-xs font-medium text-muted-foreground">Órdenes de Compra</p>
                     <div className="mt-1 space-y-1">
                       {searchResults.purchaseOrders.map((order) => (
                         <Link
@@ -196,7 +196,7 @@ export function TopNav() {
               <span className="text-sm font-medium">OC pendientes</span>
               <span className="text-xs text-muted-foreground">
                 {notifications.pendingCount > 0
-                  ? `${notifications.pendingCount} pendientes de aprobacion`
+                  ? `${notifications.pendingCount} pendientes de aprobación`
                   : "No hay OC pendientes"}
               </span>
             </DropdownMenuItem>
@@ -228,7 +228,7 @@ export function TopNav() {
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => router.push("/settings")}>Ajustes</DropdownMenuItem>
             <DropdownMenuItem onClick={handleLogout} className="text-destructive">
-              Cerrar Sesion
+              Cerrar sesión
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

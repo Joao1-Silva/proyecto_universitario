@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from app.db import Base
 from app.finance_crud import calculate_purchase_order_totals, create_payment, parse_datetime_input
 from app.models import InvoiceModel, PurchaseOrderModel, SupplierModel
-from app.schemas import PaymentCreate
+from app.schemas import PaymentCreate, SupplierCreate
 
 
 class FinanceCrudTests(unittest.TestCase):
@@ -134,6 +134,21 @@ class FinanceCrudTests(unittest.TestCase):
         self.assertEqual(invoice.paid_amount, 1000)
         self.assertEqual(invoice.balance, 0)
         self.assertEqual(invoice.status, "paid")
+
+    def test_supplier_create_normalizes_phone_e164(self) -> None:
+        supplier = SupplierCreate(
+            name="Proveedor Valido",
+            rif="J-51234567-8",
+            email="",
+            phoneCountryCode="+58",
+            phoneNumber="(412) 123-4567",
+            categoryIds=["cat-servicios"],
+            responsible="Responsable",
+            isActive=True,
+            creditDays=15,
+            balance=0.0,
+        )
+        self.assertEqual(supplier.phoneE164, "+584121234567")
 
 
 if __name__ == "__main__":

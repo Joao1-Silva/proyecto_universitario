@@ -159,7 +159,7 @@ class RbacRecoveryReportsTests(unittest.TestCase):
             json={
                 "purchaseOrderId": po_id,
                 "amount": 100,
-                "currency": "VES",
+                "currency": "USD",
                 "paymentType": "contado",
                 "paymentMode": "transferencia",
             },
@@ -220,7 +220,7 @@ class RbacRecoveryReportsTests(unittest.TestCase):
             json={
                 "purchaseOrderId": po_id,
                 "amount": 250,
-                "currency": "VES",
+                "currency": "USD",
                 "paymentType": "contado",
                 "paymentMode": "transferencia",
                 "reference": "REP-001",
@@ -279,7 +279,7 @@ class RbacRecoveryReportsTests(unittest.TestCase):
         recovery_token = restart_payload["recoveryToken"]
         questions = restart_payload["questions"]
 
-        expected_answers = ["Admin123!", "CreditosPro", "Operacion"]
+        expected_answers = ["Admin123!", "SYMBIOS", "Operación"]
         correct_answers_response = self.client.post(
             "/auth/password-recovery/verify",
             json={
@@ -374,6 +374,130 @@ class RbacRecoveryReportsTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 200, response.text)
+
+    def test_06_supplier_requires_contact_and_normalizes_phone(self) -> None:
+        superadmin_token = self._login("juan.perez@empresa.com", "Admin456!")
+
+        categories_response = self.client.get("/categories", headers=self._headers(superadmin_token))
+        self.assertEqual(categories_response.status_code, 200, categories_response.text)
+        category_id = categories_response.json()["data"][0]["id"]
+
+        missing_contact = self.client.post(
+            "/suppliers",
+            headers=self._headers(superadmin_token),
+            json={
+                "name": "Proveedor Sin Contacto",
+                "rif": "J-61234567-8",
+                "email": "",
+                "phoneCountryCode": "+58",
+                "phoneNumber": "",
+                "categoryIds": [category_id],
+                "responsible": "Responsable Test",
+                "isActive": True,
+                "creditDays": 15,
+            },
+        )
+        self.assertEqual(missing_contact.status_code, 422, missing_contact.text)
+
+        normalized_phone = self.client.post(
+            "/suppliers",
+            headers=self._headers(superadmin_token),
+            json={
+                "name": "Proveedor Telefono Normalizado",
+                "rif": "J-61234568-9",
+                "email": "",
+                "phoneCountryCode": "+58",
+                "phoneNumber": "(412) 123-4567",
+                "categoryIds": [category_id],
+                "responsible": "Responsable Test",
+                "isActive": True,
+                "creditDays": 15,
+            },
+        )
+        self.assertEqual(normalized_phone.status_code, 201, normalized_phone.text)
+        created = normalized_phone.json()["data"]
+        self.assertEqual(created["phoneE164"], "+584121234567")
+        self.assertEqual(created["email"], "")
+
+    def test_07_finance_installment_balance_summary_and_limit(self) -> None:
+        superadmin_token = self._login("juan.perez@empresa.com", "Admin456!")
+        procura_token = self._login("carlos.ruiz@empresa.com", "Procura123!")
+        finance_token = self._login("maria.lopez@empresa.com", "Finance123!")
+
+        categories_response = self.client.get("/categories", headers=self._headers(superadmin_token))
+        self.assertEqual(categories_response.status_code, 200, categories_response.text)
+        category_id = categories_response.json()["data"][0]["id"]
+
+        supplier_id = self._create_supplier(superadmin_token, category_id, "SALDO")
+
+        products_response = self.client.get("/products", headers=self._headers(procura_token))
+        self.assertEqual(products_response.status_code, 200, products_response.text)
+        products = products_response.json().get("data", [])
+        if not products:
+            create_product = self.client.post(
+                "/products",
+                headers=self._headers(procura_token),
+                json={
+                    "categoryId": category_id,
+                    "name": "Producto Saldos",
+                    "description": "Producto para pruebas de saldo",
+                    "unit": "unidad",
+                    "isTypical": True,
+                    "isActive": True,
+                },
+            )
+            self.assertEqual(create_product.status_code, 201, create_product.text)
+            product_id = create_product.json()["data"]["id"]
+        else:
+            product_id = products[0]["id"]
+
+        po_id = self._create_purchase_order(procura_token, supplier_id, product_id, category_id)
+
+        summary_initial = self.client.get(
+            "/finanzas/resumen",
+            headers=self._headers(finance_token),
+            params={"purchaseOrderId": po_id},
+        )
+        self.assertEqual(summary_initial.status_code, 200, summary_initial.text)
+        initial_row = summary_initial.json()["data"][0]
+        self.assertEqual(initial_row["paidAmount"], 0.0)
+        self.assertEqual(initial_row["remainingAmount"], initial_row["totalAmount"])
+        self.assertEqual(initial_row["status"], "pending")
+
+        first_installment = self.client.post(
+            "/finanzas/abonos",
+            headers=self._headers(finance_token),
+            json={
+                "purchaseOrderId": po_id,
+                "amount": 100,
+                "currency": "USD",
+                "concept": "Abono inicial",
+            },
+        )
+        self.assertEqual(first_installment.status_code, 201, first_installment.text)
+
+        summary_after = self.client.get(
+            "/finanzas/resumen",
+            headers=self._headers(finance_token),
+            params={"purchaseOrderId": po_id},
+        )
+        self.assertEqual(summary_after.status_code, 200, summary_after.text)
+        after_row = summary_after.json()["data"][0]
+        self.assertEqual(after_row["paidAmount"], 100.0)
+        self.assertEqual(after_row["remainingAmount"], round(after_row["totalAmount"] - 100.0, 2))
+        self.assertEqual(after_row["status"], "partial")
+
+        exceed_installment = self.client.post(
+            "/finanzas/abonos",
+            headers=self._headers(finance_token),
+            json={
+                "purchaseOrderId": po_id,
+                "amount": after_row["remainingAmount"] + 1,
+                "currency": "USD",
+                "concept": "Abono excedente",
+            },
+        )
+        self.assertEqual(exceed_installment.status_code, 422, exceed_installment.text)
 
 
 if __name__ == "__main__":

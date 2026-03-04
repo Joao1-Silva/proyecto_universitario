@@ -61,7 +61,7 @@ const statusLabel: Record<string, string> = {
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("es-VE", {
     style: "currency",
-    currency: "VES",
+    currency: "USD",
     minimumFractionDigits: 2,
   }).format(value)
 
@@ -109,7 +109,7 @@ export default function PurchaseOrdersPage() {
     ])
 
     if (!ordersResponse.ok) {
-      setLoadError(ordersResponse.error ?? "No se pudo cargar ordenes de compra.")
+      setLoadError(ordersResponse.error ?? "No se pudo cargar órdenes de compra.")
       setIsLoading(false)
       return
     }
@@ -203,7 +203,7 @@ export default function PurchaseOrdersPage() {
       return
     }
     if (orderDate < todayISO()) {
-      toast({ title: "Fecha invalida", description: "No se permiten fechas pasadas.", variant: "destructive" })
+      toast({ title: "Fecha inválida", description: "No se permiten fechas pasadas.", variant: "destructive" })
       return
     }
 
@@ -251,11 +251,11 @@ export default function PurchaseOrdersPage() {
 
     const response = await apiClient.request<unknown>("POST", `/purchase-orders/${order.id}/${action}`, payload)
     if (!response.ok) {
-      toast({ title: "Operacion fallida", description: response.error ?? "No se pudo actualizar la OC.", variant: "destructive" })
+      toast({ title: "Operación fallida", description: response.error ?? "No se pudo actualizar la OC.", variant: "destructive" })
       return
     }
 
-    toast({ title: "OC actualizada", description: `Transicion ejecutada: ${action}.` })
+    toast({ title: "OC actualizada", description: `Transición ejecutada: ${action}.` })
     await loadPage(page)
   }
 
@@ -271,7 +271,7 @@ export default function PurchaseOrdersPage() {
       return
     }
 
-    toast({ title: "Item removido", description: "El cambio quedo registrado en historico de movimientos." })
+    toast({ title: "Item removido", description: "El cambio quedó registrado en histórico de movimientos." })
     await loadPage(page)
   }
 
@@ -288,7 +288,7 @@ export default function PurchaseOrdersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Ordenes de Compra</h1>
+          <h1 className="text-3xl font-bold">Órdenes de Compra</h1>
           <p className="mt-1 text-muted-foreground">
             Flujo DRAFT &gt; PENDIENTE &gt; APROBADA/RECHAZADA &gt; CERTIFICADA &gt; RECIBIDA
           </p>
@@ -327,13 +327,13 @@ export default function PurchaseOrdersPage() {
                 {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground">
-                      Cargando ordenes...
+                      Cargando órdenes...
                     </TableCell>
                   </TableRow>
                 ) : orders.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground">
-                      No hay ordenes registradas.
+                      No hay órdenes registradas.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -413,7 +413,7 @@ export default function PurchaseOrdersPage() {
                                       <TableHead>Precio</TableHead>
                                       <TableHead>Total</TableHead>
                                       <TableHead>Estado</TableHead>
-                                      <TableHead className="text-right">Accion</TableHead>
+                                      <TableHead className="text-right">Acción</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
@@ -466,7 +466,7 @@ export default function PurchaseOrdersPage() {
               Anterior
             </Button>
             <span className="text-sm text-muted-foreground">
-              Pagina {page} de {totalPages}
+              Página {page} de {totalPages}
             </span>
             <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => void loadPage(page + 1)}>
               Siguiente
@@ -480,7 +480,7 @@ export default function PurchaseOrdersPage() {
           <DialogHeader>
             <DialogTitle>Nueva Orden de Compra</DialogTitle>
             <DialogDescription>
-              Selecciona proveedor, fecha (sin fechas pasadas) y materiales tipicos por categoria con cantidades y precios.
+              Selecciona proveedor, fecha (sin fechas pasadas) y materiales típicos por categoría con cantidades y precios.
             </DialogDescription>
           </DialogHeader>
 
@@ -517,13 +517,13 @@ export default function PurchaseOrdersPage() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <ClipboardList className="h-4 w-4" />
-                Parrilla por categoria
+                Selección de categoría
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Categoria</Label>
+                  <Label>Categoría</Label>
                   <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
                     <SelectTrigger>
                       <SelectValue />
@@ -548,7 +548,7 @@ export default function PurchaseOrdersPage() {
                       value={productSearch}
                       onChange={(event) => setProductSearch(event.target.value)}
                       className="pl-8"
-                      placeholder="Nombre o descripcion"
+                      placeholder="Nombre o descripción"
                     />
                   </div>
                 </div>
@@ -558,7 +558,7 @@ export default function PurchaseOrdersPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Producto tipico</TableHead>
+                      <TableHead>Producto típico</TableHead>
                       <TableHead>Unidad</TableHead>
                       <TableHead>Cantidad</TableHead>
                       <TableHead>Precio unitario</TableHead>
@@ -581,7 +581,7 @@ export default function PurchaseOrdersPage() {
                           <TableRow key={product.id}>
                             <TableCell>
                               <div className="font-medium">{product.name}</div>
-                              <div className="text-xs text-muted-foreground">{product.description || "Sin descripcion"}</div>
+                              <div className="text-xs text-muted-foreground">{product.description || "Sin descripción"}</div>
                             </TableCell>
                             <TableCell>{product.unit}</TableCell>
                             <TableCell>

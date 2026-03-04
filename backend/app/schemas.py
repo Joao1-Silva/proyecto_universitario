@@ -50,11 +50,30 @@ def normalize_phone_number(value: str | None) -> str:
     return "".join(ch for ch in (value or "") if ch.isdigit())
 
 
+def sanitize_phone_e164(value: str | None) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    sanitized = re.sub(r"[\s\-\(\)\.]", "", raw)
+    if not sanitized:
+        return ""
+    if sanitized.count("+") > 1:
+        return sanitized
+    if "+" in sanitized and not sanitized.startswith("+"):
+        return sanitized
+    if not sanitized.startswith("+"):
+        sanitized = f"+{sanitized}"
+    return sanitized
+
+
 def normalize_phone_e164(country_code: str | None, phone_number: str | None, explicit_e164: str | None = None) -> str:
-    if explicit_e164 and explicit_e164.strip().startswith("+"):
-        return explicit_e164.strip()
+    explicit = sanitize_phone_e164(explicit_e164)
+    if explicit:
+        return explicit
     cc = normalize_country_code(country_code)
     number = normalize_phone_number(phone_number)
+    if not number:
+        return ""
     return f"{cc}{number}"
 
 
@@ -66,20 +85,27 @@ E164_REGEX = re.compile(r"^\+[1-9]\d{7,14}$")
 def validate_email_value(value: str) -> str:
     normalized = value.strip().lower()
     if not EMAIL_REGEX.fullmatch(normalized):
-        raise ValueError("Email invalido.")
+        raise ValueError("Email inválido.")
     return normalized
 
 
 def validate_rif_normalized(value: str) -> str:
     if not RIF_REGEX.fullmatch(value):
-        raise ValueError("RIF invalido. Formato esperado: J-########-#.")
+        raise ValueError("RIF inválido. Formato esperado: J-########-#.")
     return value
 
 
 def validate_phone_e164(value: str) -> str:
     if not E164_REGEX.fullmatch(value):
-        raise ValueError("Telefono invalido. Debe cumplir formato E.164.")
+        raise ValueError("Teléfono inválido. Debe cumplir formato E.164.")
     return value
+
+
+def normalize_currency_usd(value: str | None) -> str:
+    normalized = (value or "").strip().upper() or "USD"
+    if normalized != "USD":
+        raise ValueError("La moneda admitida es USD.")
+    return "USD"
 
 
 class ApiMeta(BaseModel):
@@ -92,9 +118,9 @@ class SupplierBase(BaseModel):
 
     name: str
     rif: str
-    email: str
+    email: str = ""
     phoneCountryCode: str = "+58"
-    phoneNumber: str
+    phoneNumber: str = ""
     phoneE164: str | None = None
     categoryIds: list[str] = Field(default_factory=list)
     responsible: str
@@ -124,13 +150,23 @@ class SupplierBase(BaseModel):
 
     @model_validator(mode="after")
     def _normalize_fields(self) -> "SupplierBase":
+        self.name = self.name.strip()
+        if len(self.name) < 3:
+            raise ValueError("El nombre o razón social debe tener al menos 3 caracteres.")
         self.rif = normalize_rif_value(self.rif)
         self.rif = validate_rif_normalized(self.rif)
-        self.email = validate_email_value(self.email)
+        normalized_email = (self.email or "").strip()
+        self.email = validate_email_value(normalized_email) if normalized_email else ""
         self.phoneCountryCode = normalize_country_code(self.phoneCountryCode)
         self.phoneNumber = normalize_phone_number(self.phoneNumber)
         self.phoneE164 = normalize_phone_e164(self.phoneCountryCode, self.phoneNumber, self.phoneE164)
-        self.phoneE164 = validate_phone_e164(self.phoneE164)
+        if self.phoneE164:
+            self.phoneE164 = validate_phone_e164(self.phoneE164)
+        else:
+            self.phoneE164 = None
+
+        if not self.email and not self.phoneE164:
+            raise ValueError("Debes registrar al menos un medio de contacto: teléfono o email.")
         if self.creditDays < 0:
             raise ValueError("creditDays no puede ser negativo.")
         return self
@@ -180,7 +216,8 @@ class SupplierUpdate(BaseModel):
         if self.rif is not None:
             self.rif = validate_rif_normalized(normalize_rif_value(self.rif))
         if self.email is not None:
-            self.email = validate_email_value(self.email)
+            normalized_email = self.email.strip()
+            self.email = validate_email_value(normalized_email) if normalized_email else ""
 
         if self.phoneCountryCode is not None or self.phoneNumber is not None or self.phoneE164 is not None:
             country_code = normalize_country_code(self.phoneCountryCode or "+58")
@@ -188,7 +225,7 @@ class SupplierUpdate(BaseModel):
             phone_e164 = normalize_phone_e164(country_code, phone_number, self.phoneE164)
             self.phoneCountryCode = country_code
             self.phoneNumber = phone_number
-            self.phoneE164 = validate_phone_e164(phone_e164)
+            self.phoneE164 = validate_phone_e164(phone_e164) if phone_e164 else None
 
         if self.creditDays is not None and self.creditDays < 0:
             raise ValueError("creditDays no puede ser negativo.")
@@ -260,8 +297,13 @@ class PriceListBase(BaseModel):
     validFrom: datetime | str
     validTo: datetime | str | None = None
     supplierId: str | None = None
-    currency: str = "VES"
+    currency: str = "USD"
     isActive: bool = True
+
+    @model_validator(mode="after")
+    def _normalize_currency(self) -> "PriceListBase":
+        self.currency = normalize_currency_usd(self.currency)
+        return self
 
 
 class PriceListCreate(PriceListBase):
@@ -277,6 +319,12 @@ class PriceListUpdate(BaseModel):
     supplierId: str | None = None
     currency: str | None = None
     isActive: bool | None = None
+
+    @model_validator(mode="after")
+    def _normalize_currency(self) -> "PriceListUpdate":
+        if self.currency is not None:
+            self.currency = normalize_currency_usd(self.currency)
+        return self
 
 
 class PriceListRead(PriceListBase):
@@ -458,19 +506,29 @@ class InventoryMovementRead(BaseModel):
 class FinancePaymentCreate(BaseModel):
     purchaseOrderId: str
     amount: float
-    currency: str = "VES"
+    currency: str = "USD"
     paymentType: Literal["contado", "credito"]
     paymentMode: str
     reference: str | None = None
     concept: str | None = None
+
+    @model_validator(mode="after")
+    def _normalize_currency(self) -> "FinancePaymentCreate":
+        self.currency = normalize_currency_usd(self.currency)
+        return self
 
 
 class FinanceInstallmentCreate(BaseModel):
     purchaseOrderId: str
     financePaymentId: str | None = None
     amount: float
-    currency: str = "VES"
+    currency: str = "USD"
     concept: str | None = None
+
+    @model_validator(mode="after")
+    def _normalize_currency(self) -> "FinanceInstallmentCreate":
+        self.currency = normalize_currency_usd(self.currency)
+        return self
 
 
 class FinanceLateFeeCreate(BaseModel):
@@ -485,7 +543,12 @@ class FinanceReceiptCreate(BaseModel):
     purchaseOrderId: str
     financePaymentId: str | None = None
     amount: float
-    currency: str = "VES"
+    currency: str = "USD"
+
+    @model_validator(mode="after")
+    def _normalize_currency(self) -> "FinanceReceiptCreate":
+        self.currency = normalize_currency_usd(self.currency)
+        return self
 
 
 class FinancePaymentRead(BaseModel):

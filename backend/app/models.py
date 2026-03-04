@@ -1,6 +1,6 @@
 ﻿from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -8,12 +8,16 @@ from .db import Base
 
 class SupplierModel(Base):
     __tablename__ = "suppliers"
+    __table_args__ = (
+        CheckConstraint("LENGTH(COALESCE(email, '')) > 0 OR LENGTH(COALESCE(phone_e164, '')) > 0", name="ck_suppliers_contact_required"),
+        CheckConstraint("phone_e164 IS NULL OR (phone_e164 LIKE '+%' AND LENGTH(phone_e164) <= 16)", name="ck_suppliers_phone_e164"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     rfc: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     rif: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
-    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     phone_country_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
     phone_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -61,13 +65,14 @@ class SupplierCategoryLinkModel(Base):
 
 class PriceListModel(Base):
     __tablename__ = "price_lists"
+    __table_args__ = (CheckConstraint("currency = 'USD'", name="ck_price_lists_currency_usd"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False)
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     supplier_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="VES")
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_by: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False, default=datetime.utcnow)
@@ -187,11 +192,12 @@ class InventoryMovementModel(Base):
 
 class FinancePaymentModel(Base):
     __tablename__ = "finance_payments"
+    __table_args__ = (CheckConstraint("currency = 'USD'", name="ck_finance_payments_currency_usd"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     purchase_order_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
-    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="VES")
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
     payment_type: Mapped[str] = mapped_column(String(16), nullable=False)
     payment_mode: Mapped[str] = mapped_column(String(32), nullable=False)
     reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -202,12 +208,13 @@ class FinancePaymentModel(Base):
 
 class FinanceInstallmentModel(Base):
     __tablename__ = "finance_installments"
+    __table_args__ = (CheckConstraint("currency = 'USD'", name="ck_finance_installments_currency_usd"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     purchase_order_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     finance_payment_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
-    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="VES")
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
     concept: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False, default=datetime.utcnow)
@@ -229,13 +236,14 @@ class FinanceLateFeeModel(Base):
 
 class FinanceReceiptModel(Base):
     __tablename__ = "finance_receipts"
+    __table_args__ = (CheckConstraint("currency = 'USD'", name="ck_finance_receipts_currency_usd"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     receipt_number: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     purchase_order_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     finance_payment_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
-    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="VES")
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
     generated_pdf_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False, default=datetime.utcnow)

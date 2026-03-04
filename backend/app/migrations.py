@@ -21,12 +21,12 @@ from .settings import get_settings
 logger = logging.getLogger(__name__)
 
 DEFAULT_SECURITY_QUESTIONS = [
-    "Cual es el nombre de tu ciudad de nacimiento?",
-    "Cual fue tu primer proyecto laboral?",
-    "Cual es el nombre de tu mascota favorita?",
-    "Cual es tu pelicula favorita?",
-    "Cual es tu lugar favorito para vacacionar?",
-    "Cual fue tu primer automovil?",
+    "¿Cuál es el nombre de tu ciudad de nacimiento?",
+    "¿Cuál fue tu primer proyecto laboral?",
+    "¿Cuál es el nombre de tu mascota favorita?",
+    "¿Cuál es tu película favorita?",
+    "¿Cuál es tu lugar favorito para vacacionar?",
+    "¿Cuál fue tu primer automóvil?",
 ]
 
 

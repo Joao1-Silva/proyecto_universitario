@@ -7,43 +7,42 @@
 export const SupplierSchema = {
   name: {
     required: "El nombre es requerido",
-    minLength: { value: 3, message: "Minimo 3 caracteres" },
-    maxLength: { value: 100, message: "Maximo 100 caracteres" },
+    minLength: { value: 3, message: "Mínimo 3 caracteres" },
+    maxLength: { value: 100, message: "Máximo 100 caracteres" },
   },
   rif: {
     required: "El RIF es requerido",
     pattern: {
       value: /^(V|E|J|P|G|C|R)-?\d{8}-?\d$/i,
-      message: "RIF invalido",
+      message: "RIF inválido",
     },
   },
   email: {
-    required: "El email es requerido",
     pattern: {
       value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-      message: "Email invalido",
+      message: "Email inválido",
     },
   },
   phone: {
-    required: "El telefono es requerido",
+    required: "El teléfono es requerido",
     pattern: {
       value: /^\+?[\d\s-()]+$/,
-      message: "Telefono invalido",
+      message: "Teléfono inválido",
     },
   },
   responsible: {
     required: "El responsable es requerido",
-    minLength: { value: 2, message: "Minimo 2 caracteres" },
+    minLength: { value: 2, message: "Mínimo 2 caracteres" },
   },
   categoryIds: {
     validate: {
-      minItems: (value: string[]) => value.length > 0 || "Selecciona al menos una categoria",
+      minItems: (value: string[]) => value.length > 0 || "Selecciona al menos una categoría",
     },
   },
   creditDays: {
-    required: "Los dias de credito son requeridos",
-    min: { value: 0, message: "Minimo 0 dias" },
-    max: { value: 365, message: "Maximo 365 dias" },
+    required: "Los días de crédito son requeridos",
+    min: { value: 0, message: "Mínimo 0 días" },
+    max: { value: 365, message: "Máximo 365 días" },
   },
 }
 
@@ -72,17 +71,17 @@ export const InvoiceSchema = {
     required: "La orden de compra es requerida",
   },
   invoiceNumber: {
-    required: "El numero de factura es requerido",
-    minLength: { value: 3, message: "Minimo 3 caracteres" },
+    required: "El número de factura es requerido",
+    minLength: { value: 3, message: "Mínimo 3 caracteres" },
   },
   issueDate: {
-    required: "La fecha de emision es requerida",
+    required: "La fecha de emisión es requerida",
   },
   dueDate: {
     required: "La fecha de vencimiento es requerida",
     validate: {
       afterIssue: (value: string, formValues: any) =>
-        new Date(value) >= new Date(formValues.issueDate) || "La fecha de vencimiento debe ser posterior a la emision",
+        new Date(value) >= new Date(formValues.issueDate) || "La fecha de vencimiento debe ser posterior a la emisión",
     },
   },
   amount: {
@@ -104,11 +103,11 @@ export const PaymentSchema = {
     min: { value: 0.01, message: "El monto debe ser mayor a 0" },
   },
   method: {
-    required: "El metodo de pago es requerido",
+    required: "El método de pago es requerido",
   },
   reference: {
     required: "La referencia es requerida",
-    minLength: { value: 3, message: "Minimo 3 caracteres" },
+    minLength: { value: 3, message: "Mínimo 3 caracteres" },
   },
 }
 

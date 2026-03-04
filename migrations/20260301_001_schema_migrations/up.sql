@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS suppliers (
   is_active BOOLEAN NOT NULL DEFAULT 1,
   credit_days INTEGER NOT NULL DEFAULT 0,
   balance FLOAT NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL
+  created_at DATETIME NOT NULL,
+  CHECK (LENGTH(COALESCE(email, '')) > 0 OR LENGTH(COALESCE(phone_e164, '')) > 0),
+  CHECK (phone_e164 IS NULL OR (phone_e164 LIKE '+%' AND LENGTH(phone_e164) <= 16))
 );
 
 CREATE TABLE IF NOT EXISTS supplier_category_links (
@@ -136,7 +138,7 @@ CREATE TABLE IF NOT EXISTS price_lists (
   valid_from DATETIME NOT NULL,
   valid_to DATETIME NULL,
   supplier_id VARCHAR(64) NULL,
-  currency VARCHAR(8) NOT NULL DEFAULT 'VES',
+  currency VARCHAR(8) NOT NULL DEFAULT 'USD' CHECK (currency = 'USD'),
   is_active BOOLEAN NOT NULL DEFAULT 1,
   created_by VARCHAR(64) NOT NULL,
   created_at DATETIME NOT NULL,
@@ -186,7 +188,7 @@ CREATE TABLE IF NOT EXISTS finance_payments (
   id VARCHAR(64) PRIMARY KEY,
   purchase_order_id VARCHAR(64) NOT NULL,
   amount FLOAT NOT NULL,
-  currency VARCHAR(8) NOT NULL DEFAULT 'VES',
+  currency VARCHAR(8) NOT NULL DEFAULT 'USD' CHECK (currency = 'USD'),
   payment_type VARCHAR(16) NOT NULL,
   payment_mode VARCHAR(32) NOT NULL,
   reference VARCHAR(255) NULL,
@@ -200,7 +202,7 @@ CREATE TABLE IF NOT EXISTS finance_installments (
   purchase_order_id VARCHAR(64) NOT NULL,
   finance_payment_id VARCHAR(64) NULL,
   amount FLOAT NOT NULL,
-  currency VARCHAR(8) NOT NULL DEFAULT 'VES',
+  currency VARCHAR(8) NOT NULL DEFAULT 'USD' CHECK (currency = 'USD'),
   concept TEXT NULL,
   created_by VARCHAR(64) NOT NULL,
   created_at DATETIME NOT NULL
@@ -224,7 +226,7 @@ CREATE TABLE IF NOT EXISTS finance_receipts (
   purchase_order_id VARCHAR(64) NOT NULL,
   finance_payment_id VARCHAR(64) NULL,
   amount FLOAT NOT NULL,
-  currency VARCHAR(8) NOT NULL DEFAULT 'VES',
+  currency VARCHAR(8) NOT NULL DEFAULT 'USD' CHECK (currency = 'USD'),
   generated_pdf_path TEXT NULL,
   created_by VARCHAR(64) NOT NULL,
   created_at DATETIME NOT NULL

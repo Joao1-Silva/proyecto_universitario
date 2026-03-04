@@ -104,7 +104,7 @@
   },
   "build": {
     "appId": "com.aguilera21.sga",
-    "productName": "SGA-AGUILERA21",
+    "productName": "SYMBIOS",
     "directories": {
       "output": "dist"
     },
@@ -139,7 +139,7 @@
     "asar": true,
     "win": {
       "target": "nsis",
-      "artifactName": "SGA-AGUILERA21-Setup-${version}.exe",
+      "artifactName": "SYMBIOS-Setup-${version}.exe",
       "signAndEditExecutable": false
     },
     "nsis": {

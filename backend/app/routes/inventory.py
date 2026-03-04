@@ -82,7 +82,7 @@ def _get_or_create_inventory_item(session: Session, product_id: str) -> Inventor
         id=f"inv_{uuid4()}",
         product_id=product_id,
         stock=0,
-        location="Almacen principal",
+        location="Almacén principal",
         asset_type=asset_type,
         updated_at=datetime.utcnow(),
     )

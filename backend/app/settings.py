@@ -9,7 +9,7 @@ load_dotenv(BACKEND_ROOT / ".env")
 
 
 class Settings(BaseSettings):
-    app_name: str = "Sistema de Gestion Administrativa de activos industriales en Servicios y Mantenimientos AGUILERA21 C.A."
+    app_name: str = "SYMBIOS"
     app_version: str = "0.1.0"
     api_host: str = "127.0.0.1"
     api_port: int = 8000
@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     default_procura_password: str = "Procura123!"
 
     superuser_security_answer_1: str = "Admin123!"
-    superuser_security_answer_2: str = "CreditosPro"
-    superuser_security_answer_3: str = "Operacion"
+    superuser_security_answer_2: str = "SYMBIOS"
+    superuser_security_answer_3: str = "Operación"
 
     password_recovery_max_attempts: int = 5
     password_recovery_attempt_window_minutes: int = 15

@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
 import { createApiClient } from "@/lib/api-client"
-import type { FinanceInstallment, FinancePayment, PurchaseOrder } from "@/lib/api-types"
+import type { FinanceBalanceSummary, FinanceInstallment, FinancePayment, PurchaseOrder } from "@/lib/api-types"
 import { getPermissions } from "@/lib/permissions"
 import { getCurrentUser, useAppStore } from "@/lib/store"
 
@@ -26,12 +26,55 @@ const parseList = <T,>(payload: unknown): T[] => {
   return data as T[]
 }
 
-const formatCurrency = (value: number, currency = "VES") =>
+const formatCurrency = (value: number, currency = "USD") =>
   new Intl.NumberFormat("es-VE", {
     style: "currency",
     currency,
     minimumFractionDigits: 2,
   }).format(value)
+
+const mapStatusLabel: Record<FinanceBalanceSummary["status"], string> = {
+  pending: "Pendiente",
+  partial: "Parcial",
+  paid: "Pagado",
+}
+
+const mapStatusVariant: Record<FinanceBalanceSummary["status"], "secondary" | "outline" | "default"> = {
+  pending: "secondary",
+  partial: "outline",
+  paid: "default",
+}
+
+const buildLocalSummaries = (
+  orders: PurchaseOrder[],
+  installments: FinanceInstallment[],
+): FinanceBalanceSummary[] => {
+  const paidByOrder = installments.reduce<Record<string, number>>((acc, installment) => {
+    acc[installment.purchaseOrderId] = (acc[installment.purchaseOrderId] ?? 0) + Number(installment.amount)
+    return acc
+  }, {})
+
+  return orders.map((order) => {
+    const totalAmount = Number(order.total)
+    const paidAmount = Number((paidByOrder[order.id] ?? 0).toFixed(2))
+    const remainingAmount = Number(Math.max(totalAmount - paidAmount, 0).toFixed(2))
+
+    let status: FinanceBalanceSummary["status"] = "pending"
+    if (remainingAmount <= 0) status = "paid"
+    else if (paidAmount > 0) status = "partial"
+
+    return {
+      purchaseOrderId: order.id,
+      orderNumber: order.orderNumber,
+      supplierName: order.supplierName,
+      totalAmount: Number(totalAmount.toFixed(2)),
+      paidAmount,
+      remainingAmount,
+      status,
+      currency: "USD",
+    }
+  })
+}
 
 export default function FinanzasPage() {
   const store = useAppStore()
@@ -41,6 +84,7 @@ export default function FinanzasPage() {
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
   const [payments, setPayments] = useState<FinancePayment[]>([])
   const [installments, setInstallments] = useState<FinanceInstallment[]>([])
+  const [summaries, setSummaries] = useState<FinanceBalanceSummary[]>([])
 
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
@@ -48,7 +92,6 @@ export default function FinanzasPage() {
   const [paymentForm, setPaymentForm] = useState({
     purchaseOrderId: "",
     amount: 0,
-    currency: "VES",
     paymentType: "contado",
     paymentMode: "transferencia",
     reference: "",
@@ -58,35 +101,54 @@ export default function FinanzasPage() {
   const [installmentForm, setInstallmentForm] = useState({
     purchaseOrderId: "",
     amount: 0,
-    currency: "VES",
     concept: "",
   })
 
-
   const orderById = useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders])
+  const summaryByOrderId = useMemo(() => new Map(summaries.map((summary) => [summary.purchaseOrderId, summary])), [summaries])
+
+  const selectedInstallmentSummary = useMemo(
+    () => summaryByOrderId.get(installmentForm.purchaseOrderId),
+    [installmentForm.purchaseOrderId, summaryByOrderId],
+  )
+
+  const selectedPaymentSummary = useMemo(
+    () => summaryByOrderId.get(paymentForm.purchaseOrderId),
+    [paymentForm.purchaseOrderId, summaryByOrderId],
+  )
 
   const loadData = async () => {
     setIsLoading(true)
     setError("")
 
-    const [ordersRes, payRes, insRes] = await Promise.all([
+    const [ordersRes, payRes, insRes, summaryRes] = await Promise.all([
       apiClient.request<unknown>("GET", "/purchase-orders?page=1&pageSize=200"),
       apiClient.request<unknown>("GET", "/finanzas/pagos"),
       apiClient.request<unknown>("GET", "/finanzas/abonos"),
+      apiClient.request<unknown>("GET", "/finanzas/resumen"),
     ])
 
-    if (!ordersRes.ok && !payRes.ok) {
-      setError(ordersRes.error ?? payRes.error ?? "No se pudo cargar finanzas.")
+    if (!ordersRes.ok && !payRes.ok && !insRes.ok) {
+      setError(ordersRes.error ?? payRes.error ?? insRes.error ?? "No se pudo cargar finanzas.")
       setIsLoading(false)
       return
     }
 
-    if (ordersRes.ok) {
-      const data = parseList<PurchaseOrder>(ordersRes.data)
-      setOrders(data.filter((order) => ["approved", "certified", "received"].includes(order.status)))
+    const nextOrders = ordersRes.ok
+      ? parseList<PurchaseOrder>(ordersRes.data).filter((order) => ["approved", "certified", "received"].includes(order.status))
+      : []
+    const nextPayments = payRes.ok ? parseList<FinancePayment>(payRes.data) : []
+    const nextInstallments = insRes.ok ? parseList<FinanceInstallment>(insRes.data) : []
+
+    setOrders(nextOrders)
+    setPayments(nextPayments)
+    setInstallments(nextInstallments)
+
+    if (summaryRes.ok) {
+      setSummaries(parseList<FinanceBalanceSummary>(summaryRes.data))
+    } else {
+      setSummaries(buildLocalSummaries(nextOrders, nextInstallments))
     }
-    if (payRes.ok) setPayments(parseList<FinancePayment>(payRes.data))
-    if (insRes.ok) setInstallments(parseList<FinanceInstallment>(insRes.data))
 
     setIsLoading(false)
   }
@@ -102,14 +164,17 @@ export default function FinanzasPage() {
       return
     }
 
-    const response = await apiClient.request<unknown>("POST", "/finanzas/pagos", paymentForm)
+    const response = await apiClient.request<unknown>("POST", "/finanzas/pagos", {
+      ...paymentForm,
+      currency: "USD",
+    })
     if (!response.ok) {
       toast({ title: "No se pudo registrar pago", description: response.error ?? "Intenta nuevamente.", variant: "destructive" })
       return
     }
 
     toast({ title: "Pago registrado", description: "Pago guardado correctamente." })
-    setPaymentForm({ purchaseOrderId: "", amount: 0, currency: "VES", paymentType: "contado", paymentMode: "transferencia", reference: "", concept: "" })
+    setPaymentForm({ purchaseOrderId: "", amount: 0, paymentType: "contado", paymentMode: "transferencia", reference: "", concept: "" })
     await loadData()
   }
 
@@ -120,14 +185,26 @@ export default function FinanzasPage() {
       return
     }
 
-    const response = await apiClient.request<unknown>("POST", "/finanzas/abonos", installmentForm)
+    if (selectedInstallmentSummary && installmentForm.amount > selectedInstallmentSummary.remainingAmount) {
+      toast({
+        title: "Abono inválido",
+        description: "El abono no puede superar el saldo restante.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const response = await apiClient.request<unknown>("POST", "/finanzas/abonos", {
+      ...installmentForm,
+      currency: "USD",
+    })
     if (!response.ok) {
       toast({ title: "No se pudo registrar abono", description: response.error ?? "Intenta nuevamente.", variant: "destructive" })
       return
     }
 
     toast({ title: "Abono registrado", description: "Abono guardado correctamente." })
-    setInstallmentForm({ purchaseOrderId: "", amount: 0, currency: "VES", concept: "" })
+    setInstallmentForm({ purchaseOrderId: "", amount: 0, concept: "" })
     await loadData()
   }
 
@@ -149,7 +226,7 @@ export default function FinanzasPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Finanzas</h1>
-        <p className="mt-1 text-muted-foreground">Pagos y abonos enlazados exclusivamente a ordenes de compra</p>
+        <p className="mt-1 text-muted-foreground">Pagos y abonos enlazados exclusivamente a órdenes de compra en USD</p>
       </div>
 
       {error && (
@@ -157,6 +234,52 @@ export default function FinanzasPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Saldo por orden de compra</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>OC</TableHead>
+                  <TableHead>Proveedor</TableHead>
+                  <TableHead className="text-right">Monto total</TableHead>
+                  <TableHead className="text-right">Abonado</TableHead>
+                  <TableHead className="text-right">Saldo</TableHead>
+                  <TableHead>Estado</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">Cargando...</TableCell>
+                  </TableRow>
+                ) : summaries.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">Sin órdenes con saldo.</TableCell>
+                  </TableRow>
+                ) : (
+                  summaries.map((summary) => (
+                    <TableRow key={summary.purchaseOrderId}>
+                      <TableCell>{summary.orderNumber}</TableCell>
+                      <TableCell>{summary.supplierName}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(summary.totalAmount, summary.currency)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(summary.paidAmount, summary.currency)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(summary.remainingAmount, summary.currency)}</TableCell>
+                      <TableCell>
+                        <Badge variant={mapStatusVariant[summary.status]}>{mapStatusLabel[summary.status]}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="pagos" className="space-y-4">
         <TabsList>
@@ -187,7 +310,7 @@ export default function FinanzasPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Monto</Label>
+                <Label>Monto (USD)</Label>
                 <Input type="number" min={0} value={paymentForm.amount} onChange={(event) => setPaymentForm((prev) => ({ ...prev, amount: Number(event.target.value) }))} />
               </div>
 
@@ -199,7 +322,7 @@ export default function FinanzasPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="contado">Contado</SelectItem>
-                    <SelectItem value="credito">Credito</SelectItem>
+                    <SelectItem value="credito">Crédito</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -218,6 +341,12 @@ export default function FinanzasPage() {
                 <Label>Concepto</Label>
                 <Input value={paymentForm.concept} onChange={(event) => setPaymentForm((prev) => ({ ...prev, concept: event.target.value }))} />
               </div>
+
+              {selectedPaymentSummary && (
+                <div className="rounded-md border bg-muted/40 p-3 text-sm md:col-span-3">
+                  Saldo restante actual: {formatCurrency(selectedPaymentSummary.remainingAmount, "USD")}
+                </div>
+              )}
 
               <div className="md:col-span-3">
                 <Button onClick={() => void submitPayment()} disabled={!permissions.canManageFinance}>
@@ -241,29 +370,34 @@ export default function FinanzasPage() {
                       <TableHead>Tipo</TableHead>
                       <TableHead>Modo</TableHead>
                       <TableHead className="text-right">Monto</TableHead>
+                      <TableHead className="text-right">Saldo</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {isLoading ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground">Cargando...</TableCell>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">Cargando...</TableCell>
                       </TableRow>
                     ) : payments.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground">Sin pagos registrados.</TableCell>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">Sin pagos registrados.</TableCell>
                       </TableRow>
                     ) : (
-                      payments.map((payment) => (
-                        <TableRow key={payment.id}>
-                          <TableCell>{new Date(payment.createdAt).toLocaleString("es-VE")}</TableCell>
-                          <TableCell>{orderById.get(payment.purchaseOrderId)?.orderNumber ?? payment.purchaseOrderId}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{payment.paymentType}</Badge>
-                          </TableCell>
-                          <TableCell>{payment.paymentMode}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(payment.amount, payment.currency)}</TableCell>
-                        </TableRow>
-                      ))
+                      payments.map((payment) => {
+                        const summary = summaryByOrderId.get(payment.purchaseOrderId)
+                        return (
+                          <TableRow key={payment.id}>
+                            <TableCell>{new Date(payment.createdAt).toLocaleString("es-VE")}</TableCell>
+                            <TableCell>{orderById.get(payment.purchaseOrderId)?.orderNumber ?? payment.purchaseOrderId}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{payment.paymentType}</Badge>
+                            </TableCell>
+                            <TableCell>{payment.paymentMode}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(payment.amount, payment.currency)}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(summary?.remainingAmount ?? 0, "USD")}</TableCell>
+                          </TableRow>
+                        )
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -295,14 +429,23 @@ export default function FinanzasPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Monto</Label>
+                <Label>Monto (USD)</Label>
                 <Input type="number" min={0} value={installmentForm.amount} onChange={(event) => setInstallmentForm((prev) => ({ ...prev, amount: Number(event.target.value) }))} />
               </div>
 
               <div className="space-y-2 md:col-span-3">
-                <Label>Concepto</Label>
+                <Label>Referencia/nota</Label>
                 <Input value={installmentForm.concept} onChange={(event) => setInstallmentForm((prev) => ({ ...prev, concept: event.target.value }))} />
               </div>
+
+              {selectedInstallmentSummary && (
+                <div className="grid gap-2 rounded-md border bg-muted/40 p-3 text-sm md:col-span-3 md:grid-cols-4">
+                  <p>Total: {formatCurrency(selectedInstallmentSummary.totalAmount, "USD")}</p>
+                  <p>Abonado: {formatCurrency(selectedInstallmentSummary.paidAmount, "USD")}</p>
+                  <p>Saldo restante: {formatCurrency(selectedInstallmentSummary.remainingAmount, "USD")}</p>
+                  <p>Estado: {mapStatusLabel[selectedInstallmentSummary.status]}</p>
+                </div>
+              )}
 
               <div className="md:col-span-3">
                 <Button onClick={() => void submitInstallment()} disabled={!permissions.canManageFinance}>
@@ -314,7 +457,7 @@ export default function FinanzasPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Abonos registrados</CardTitle>
+              <CardTitle>Historial de abonos</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="rounded-lg border">
@@ -323,24 +466,29 @@ export default function FinanzasPage() {
                     <TableRow>
                       <TableHead>Fecha</TableHead>
                       <TableHead>OC</TableHead>
-                      <TableHead>Concepto</TableHead>
+                      <TableHead>Referencia/nota</TableHead>
                       <TableHead className="text-right">Monto</TableHead>
+                      <TableHead className="text-right">Saldo restante</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {installments.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground">Sin abonos registrados.</TableCell>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground">Sin abonos registrados.</TableCell>
                       </TableRow>
                     ) : (
-                      installments.map((installment) => (
-                        <TableRow key={installment.id}>
-                          <TableCell>{new Date(installment.createdAt).toLocaleString("es-VE")}</TableCell>
-                          <TableCell>{orderById.get(installment.purchaseOrderId)?.orderNumber ?? installment.purchaseOrderId}</TableCell>
-                          <TableCell>{installment.concept || "-"}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(installment.amount, installment.currency)}</TableCell>
-                        </TableRow>
-                      ))
+                      installments.map((installment) => {
+                        const summary = summaryByOrderId.get(installment.purchaseOrderId)
+                        return (
+                          <TableRow key={installment.id}>
+                            <TableCell>{new Date(installment.createdAt).toLocaleString("es-VE")}</TableCell>
+                            <TableCell>{orderById.get(installment.purchaseOrderId)?.orderNumber ?? installment.purchaseOrderId}</TableCell>
+                            <TableCell>{installment.concept || "-"}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(installment.amount, installment.currency)}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(summary?.remainingAmount ?? 0, "USD")}</TableCell>
+                          </TableRow>
+                        )
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -348,7 +496,6 @@ export default function FinanzasPage() {
             </CardContent>
           </Card>
         </TabsContent>
-
       </Tabs>
     </div>
   )

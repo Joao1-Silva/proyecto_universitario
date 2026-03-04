@@ -102,13 +102,13 @@ def _build_movement_history_report(session: Session, filters: dict) -> ReportPay
     ]
 
     return ReportPayload(
-        title="Historico de movimientos",
+        title="Histórico de movimientos",
         report_type="movement-history",
         columns=[
             ReportColumn("timestamp", "Fecha/Hora"),
             ReportColumn("user", "Usuario"),
             ReportColumn("role", "Rol"),
-            ReportColumn("action", "Accion"),
+            ReportColumn("action", "Acción"),
             ReportColumn("entity", "Entidad"),
             ReportColumn("entityId", "ID"),
             ReportColumn("result", "Resultado"),
@@ -145,7 +145,7 @@ def _build_finance_report(session: Session, filters: dict) -> ReportPayload:
                 report_type="finanzas",
                 columns=[
                     ReportColumn("type", "Tipo"),
-                    ReportColumn("number", "Numero"),
+                    ReportColumn("number", "Número"),
                     ReportColumn("purchaseOrder", "OC"),
                     ReportColumn("amount", "Monto"),
                     ReportColumn("currency", "Moneda"),
@@ -194,7 +194,7 @@ def _build_finance_report(session: Session, filters: dict) -> ReportPayload:
                 "number": late_fee.id,
                 "purchaseOrder": late_fee.purchase_order_id,
                 "amount": round(float(late_fee.calculated_amount), 2),
-                "currency": "VES",
+                "currency": "USD",
                 "date": late_fee.created_at.strftime("%Y-%m-%d"),
                 "user": late_fee.created_by,
             }
@@ -207,7 +207,7 @@ def _build_finance_report(session: Session, filters: dict) -> ReportPayload:
         report_type="finanzas",
         columns=[
             ReportColumn("type", "Tipo"),
-            ReportColumn("number", "Numero"),
+            ReportColumn("number", "Número"),
             ReportColumn("purchaseOrder", "OC"),
             ReportColumn("amount", "Monto"),
             ReportColumn("currency", "Moneda"),
@@ -248,7 +248,7 @@ def _build_purchase_orders_report(session: Session, filters: dict) -> ReportPayl
     ]
 
     return ReportPayload(
-        title="Reporte de Ordenes de Compra",
+        title="Reporte de Órdenes de Compra",
         report_type="purchase-orders",
         columns=[
             ReportColumn("orderNumber", "OC"),
@@ -328,7 +328,7 @@ def _company_name(session: Session) -> str:
     settings = session.get(CompanySettingsModel, "default")
     if settings and settings.name.strip():
         return settings.name.strip()
-    return "Sistema de Gestion Administrativa de activos industriales en Servicios y Mantenimientos AGUILERA21 C.A."
+    return "SYMBIOS"
 
 
 def build_report_pdf_bytes(session: Session, payload: ReportPayload) -> bytes:
@@ -356,7 +356,7 @@ def build_report_pdf_bytes(session: Session, payload: ReportPayload) -> bytes:
         y -= 16
         pdf.setFont("Helvetica", 9)
         pdf.drawString(left_margin, y, f"Generado: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        pdf.drawRightString(right_margin, y, f"Pagina {page_number}")
+        pdf.drawRightString(right_margin, y, f"Página {page_number}")
         y -= 14
         filter_text = ", ".join(
             f"{key}={value}" for key, value in payload.filters.items() if _normalize_text(value)

@@ -279,6 +279,17 @@ export interface FinanceInstallment {
   createdAt: string
 }
 
+export interface FinanceBalanceSummary {
+  purchaseOrderId: string
+  orderNumber: string
+  supplierName: string
+  totalAmount: number
+  paidAmount: number
+  remainingAmount: number
+  status: "pending" | "partial" | "paid"
+  currency: "USD"
+}
+
 export interface FinanceLateFee {
   id: string
   purchaseOrderId: string

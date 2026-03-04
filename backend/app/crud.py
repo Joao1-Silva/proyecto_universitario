@@ -50,7 +50,7 @@ def _to_supplier_read(model: SupplierModel, category_ids: list[str] | None = Non
         id=model.id,
         name=model.name,
         rif=normalize_rif_value(model.rif or model.rfc or ""),
-        email=model.email,
+        email=(model.email or "").strip(),
         phoneCountryCode=phone_country_code,
         phoneNumber=phone_number,
         phoneE164=phone_e164,
@@ -104,7 +104,7 @@ def create_supplier(payload: SupplierCreate) -> SupplierRead:
             id=_generate_supplier_id(),
             name=payload.name,
             rif=payload.rif,
-            email=payload.email,
+            email=(payload.email or "").strip(),
             phoneCountryCode=payload.phoneCountryCode,
             phoneNumber=payload.phoneNumber,
             phoneE164=payload.phoneE164,
@@ -124,7 +124,7 @@ def create_supplier(payload: SupplierCreate) -> SupplierRead:
             name=payload.name,
             rfc=payload.rif,
             rif=payload.rif,
-            email=payload.email,
+            email=(payload.email or "").strip(),
             phone=f"{payload.phoneCountryCode} {payload.phoneNumber}",
             phone_country_code=payload.phoneCountryCode,
             phone_number=payload.phoneNumber,
@@ -172,7 +172,7 @@ def update_supplier(supplier_id: str, payload: SupplierUpdate) -> SupplierRead |
             supplier.rif = normalize_rif_value(updates["rif"])
             supplier.rfc = supplier.rif
         if "email" in updates:
-            supplier.email = updates["email"]
+            supplier.email = (updates["email"] or "").strip()
         if "phoneCountryCode" in updates:
             supplier.phone_country_code = updates["phoneCountryCode"]
         if "phoneNumber" in updates:

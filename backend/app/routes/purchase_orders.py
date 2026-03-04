@@ -270,7 +270,7 @@ def _record_inventory_entry_for_po(
                 id=f"inv_{uuid4()}",
                 product_id=product_id,
                 stock=0,
-                location="Almacen principal",
+                location="Almacén principal",
                 asset_type=asset_type,
                 updated_at=now,
             )

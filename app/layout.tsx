@@ -9,9 +9,9 @@ import { Toaster } from "@/components/ui/toaster"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Sistema de Gestion Administrativa de activos industriales en Servicios y Mantenimientos AGUILERA21 C.A.",
+  title: "SYMBIOS",
   description:
-    "Plataforma de gestion administrativa de activos industriales para proveedores, ordenes de compra, inventario y finanzas.",
+    "Plataforma de gestión administrativa de activos industriales para proveedores, órdenes de compra, inventario y finanzas.",
 }
 
 export default function RootLayout({

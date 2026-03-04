@@ -40,14 +40,14 @@ def _validate_security_questions(session: Session, payload_questions: list[dict]
     if len(payload_questions) != 3:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Exactly 3 security questions are required.",
+            detail="Se requieren exactamente 3 preguntas de seguridad.",
         )
 
     question_ids = [int(item.get("questionId", 0)) for item in payload_questions]
     if len(set(question_ids)) != 3:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Security questions must be unique.",
+            detail="Las preguntas de seguridad deben ser únicas.",
         )
 
     available = session.execute(
@@ -57,7 +57,7 @@ def _validate_security_questions(session: Session, payload_questions: list[dict]
         )
     ).scalars().all()
     if len(set(int(value) for value in available)) != 3:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid security questions.")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Preguntas de seguridad inválidas.")
 
     normalized: list[dict] = []
     for item in payload_questions:
@@ -66,7 +66,7 @@ def _validate_security_questions(session: Session, payload_questions: list[dict]
         if len(answer) < 2:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Each security answer must have at least 2 characters.",
+                detail="Cada respuesta de seguridad debe tener al menos 2 caracteres.",
             )
         normalized.append({"questionId": question_id, "answerHash": hash_secret(answer)})
     return normalized
@@ -104,7 +104,7 @@ def create_user(
     email = payload.email.strip().lower()
     existing = _get_user_by_email(session, email)
     if existing is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El email ya existe.")
 
     security_questions = _validate_security_questions(
         session, [item.model_dump() for item in payload.securityQuestions]
@@ -144,7 +144,7 @@ def list_user_security_questions(
 ) -> dict:
     user = session.get(UserModel, user_id)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
 
     rows = session.execute(
         select(UserSecurityQuestionModel.question_id, SecurityQuestionModel.question_text)
@@ -171,13 +171,13 @@ def update_user(
 
     user = session.get(UserModel, user_id)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
 
     if "email" in updates:
         next_email = str(updates["email"]).strip().lower()
         existing = _get_user_by_email(session, next_email)
         if existing is not None and existing.id != user_id:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists.")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El email ya existe.")
         user.email = next_email
 
     if "name" in updates:
@@ -223,9 +223,9 @@ def delete_user(
 ) -> dict:
     user = session.get(UserModel, user_id)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
     if user.id == current_user.id:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cannot delete current user.")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No puedes eliminar al usuario actual.")
 
     session.execute(delete(UserSecurityQuestionModel).where(UserSecurityQuestionModel.user_id == user_id))
     session.delete(user)

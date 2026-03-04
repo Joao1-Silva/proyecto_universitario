@@ -23,7 +23,7 @@ class PriceListCsvImportRequest(BaseModel):
     name: str = "Lista importada CSV"
     validFrom: datetime | str
     supplierId: str | None = None
-    currency: str = "VES"
+    currency: str = "USD"
 
 
 def _parse_datetime_input(raw: datetime | str, field_name: str) -> datetime:
@@ -37,6 +37,16 @@ def _parse_datetime_input(raw: datetime | str, field_name: str) -> datetime:
     if parsed.tzinfo is not None:
         parsed = parsed.astimezone().replace(tzinfo=None)
     return parsed
+
+
+def _normalize_usd_currency(value: str | None) -> str:
+    normalized = (value or "").strip().upper() or "USD"
+    if normalized != "USD":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La moneda admitida es USD.",
+        )
+    return "USD"
 
 
 def _serialize_price_list(model: PriceListModel, item_count: int | None = None) -> dict:
@@ -101,7 +111,7 @@ def create_price_list(
         valid_from=_parse_datetime_input(payload.validFrom, "validFrom"),
         valid_to=_parse_datetime_input(payload.validTo, "validTo") if payload.validTo else None,
         supplier_id=payload.supplierId,
-        currency=payload.currency.strip().upper() or "VES",
+        currency=_normalize_usd_currency(payload.currency),
         is_active=bool(payload.isActive),
         created_by=current_user.id,
         created_at=datetime.utcnow(),
@@ -145,7 +155,7 @@ def update_price_list(
     if "supplierId" in updates:
         model.supplier_id = updates["supplierId"]
     if "currency" in updates:
-        model.currency = str(updates["currency"]).strip().upper()
+        model.currency = _normalize_usd_currency(str(updates["currency"]))
     if "isActive" in updates:
         model.is_active = bool(updates["isActive"])
     model.updated_at = datetime.utcnow()
@@ -303,7 +313,7 @@ def import_price_list_csv(
         valid_from=_parse_datetime_input(payload.validFrom, "validFrom"),
         valid_to=None,
         supplier_id=payload.supplierId,
-        currency=payload.currency.strip().upper() or "VES",
+        currency=_normalize_usd_currency(payload.currency),
         is_active=True,
         created_by=current_user.id,
         created_at=datetime.utcnow(),

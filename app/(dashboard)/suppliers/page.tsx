@@ -57,6 +57,7 @@ interface SupplierFormErrors {
   rif?: string
   email?: string
   phone?: string
+  contact?: string
   responsible?: string
   categoryIds?: string
   creditDays?: string
@@ -76,18 +77,35 @@ const emptyForm: SupplierFormState = {
 
 const validateSupplier = (form: SupplierFormState): SupplierFormErrors => {
   const errors: SupplierFormErrors = {}
-  if (!form.name.trim()) errors.name = "El nombre es obligatorio."
-  if (!RIF_REGEX.test(form.rif.trim())) errors.rif = "RIF invalido. Debe ser J-########-#."
-  if (!EMAIL_REGEX.test(form.email.trim())) errors.email = "Email invalido."
+  const normalizedName = form.name.trim()
+  const normalizedEmail = form.email.trim().toLowerCase()
+  const normalizedPhoneNumber = normalizePhoneNumber(form.phoneNumber)
+  const countryCode = form.phoneCountryCode.trim()
+  const normalizedPhone = `${countryCode}${normalizedPhoneNumber}`
+  const countryDigits = countryCode.replace(/\D/g, "")
+  const e164Digits = `${countryDigits}${normalizedPhoneNumber}`
+  const hasEmail = normalizedEmail.length > 0
+  const hasPhone = normalizedPhoneNumber.length > 0
 
-  const phone = `${form.phoneCountryCode}${normalizePhoneNumber(form.phoneNumber)}`
-  if (!E164_REGEX.test(phone)) {
-    errors.phone = "Telefono invalido. Debe cumplir formato E.164."
+  if (normalizedName.length < 3) errors.name = "El nombre o razón social debe tener al menos 3 caracteres."
+  if (!RIF_REGEX.test(form.rif.trim())) errors.rif = "RIF inválido. Debe ser J-########-#."
+  if (hasEmail && !EMAIL_REGEX.test(normalizedEmail)) errors.email = "Email inválido."
+
+  if (!hasEmail && !hasPhone) {
+    errors.contact = "Debes registrar al menos un medio de contacto: teléfono o email."
+  }
+
+  if (hasPhone) {
+    if (e164Digits.length > 15) {
+      errors.phone = "El teléfono no puede superar 15 dígitos (E.164)."
+    } else if (!E164_REGEX.test(normalizedPhone)) {
+      errors.phone = "Teléfono inválido. Debe cumplir formato E.164."
+    }
   }
 
   if (!form.responsible.trim()) errors.responsible = "El responsable es obligatorio."
-  if (form.categoryIds.length === 0) errors.categoryIds = "Debes seleccionar al menos una categoria."
-  if (form.creditDays < 0 || form.creditDays > 365) errors.creditDays = "Dias de credito entre 0 y 365."
+  if (form.categoryIds.length === 0) errors.categoryIds = "Debes seleccionar al menos una categoría."
+  if (form.creditDays < 0 || form.creditDays > 365) errors.creditDays = "Días de crédito entre 0 y 365."
 
   return errors
 }
@@ -96,7 +114,7 @@ const supplierToForm = (supplier: Supplier): SupplierFormState => ({
   id: supplier.id,
   name: supplier.name,
   rif: supplier.rif || "J-",
-  email: supplier.email,
+  email: supplier.email || "",
   phoneCountryCode: supplier.phoneCountryCode || "+58",
   phoneNumber: supplier.phoneNumber || "",
   responsible: supplier.responsible,
@@ -147,7 +165,7 @@ export default function SuppliersPage() {
           if (resolved.mode === "API") {
             setDataSource(localDataSource)
             setBackendError(
-              "Backend API con errores: Proveedores cambia automaticamente a modo beta/local para continuar.",
+              "Backend API con errores: Proveedores cambia automáticamente a modo beta/local para continuar.",
             )
             await refreshSuppliers(localDataSource)
           } else {
@@ -199,6 +217,9 @@ export default function SuppliersPage() {
       email: form.email.trim().toLowerCase(),
       phoneCountryCode: form.phoneCountryCode,
       phoneNumber: normalizePhoneNumber(form.phoneNumber),
+      phoneE164: normalizePhoneNumber(form.phoneNumber)
+        ? `${form.phoneCountryCode}${normalizePhoneNumber(form.phoneNumber)}`
+        : undefined,
       categoryIds: form.categoryIds,
       responsible: form.responsible.trim(),
       creditDays: Number(form.creditDays),
@@ -253,7 +274,7 @@ export default function SuppliersPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Proveedores</h1>
-          <p className="mt-1 text-muted-foreground">Gestion de proveedores del sistema</p>
+          <p className="mt-1 text-muted-foreground">Gestión de proveedores del sistema</p>
         </div>
         <Alert variant="destructive">
           <AlertDescription>No tienes permisos para ver proveedores.</AlertDescription>
@@ -267,7 +288,7 @@ export default function SuppliersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Proveedores</h1>
-          <p className="mt-1 text-muted-foreground">RIF, telefono con codigo internacional y validaciones en tiempo real</p>
+          <p className="mt-1 text-muted-foreground">RIF, teléfono con código internacional y validaciones en tiempo real</p>
         </div>
         <Button onClick={openCreate} disabled={!canManage || isLoading || !dataSource}>
           <Plus className="mr-2 h-4 w-4" />
@@ -287,7 +308,7 @@ export default function SuppliersPage() {
             <TableRow>
               <TableHead>Proveedor</TableHead>
               <TableHead>Contacto</TableHead>
-              <TableHead>Categorias</TableHead>
+              <TableHead>Categorías</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
@@ -364,7 +385,7 @@ export default function SuppliersPage() {
           <DialogHeader>
             <DialogTitle>{form.id ? "Editar proveedor" : "Nuevo proveedor"}</DialogTitle>
             <DialogDescription>
-              El RIF se normaliza automaticamente al formato J-########-#. No se permite guardar con errores.
+              El RIF se normaliza automáticamente al formato J-########-#. No se permite guardar con errores.
             </DialogDescription>
           </DialogHeader>
 
@@ -400,11 +421,12 @@ export default function SuppliersPage() {
                 onChange={(event) => onFormChange({ email: event.target.value })}
                 onBlur={() => setFormErrors(validateSupplier(form))}
               />
+              <p className="text-xs text-muted-foreground">Opcional (si no registras teléfono).</p>
               {formErrors.email && <p className="text-xs text-destructive">{formErrors.email}</p>}
             </div>
 
             <div className="space-y-2">
-              <Label>Codigo pais</Label>
+              <Label>Código país</Label>
               <Select value={form.phoneCountryCode} onValueChange={(value) => onFormChange({ phoneCountryCode: value })}>
                 <SelectTrigger>
                   <SelectValue />
@@ -420,12 +442,15 @@ export default function SuppliersPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="supplier-phone">Telefono</Label>
+              <Label htmlFor="supplier-phone">Teléfono</Label>
               <Input
                 id="supplier-phone"
                 value={form.phoneNumber}
                 onChange={(event) => onFormChange({ phoneNumber: normalizePhoneNumber(event.target.value) })}
                 onBlur={() => setFormErrors(validateSupplier(form))}
+                inputMode="numeric"
+                maxLength={15}
+                placeholder="4121234567"
               />
               {formErrors.phone && <p className="text-xs text-destructive">{formErrors.phone}</p>}
             </div>
@@ -439,10 +464,11 @@ export default function SuppliersPage() {
                 onBlur={() => setFormErrors(validateSupplier(form))}
               />
               {formErrors.responsible && <p className="text-xs text-destructive">{formErrors.responsible}</p>}
+              {formErrors.contact && <p className="text-xs text-destructive">{formErrors.contact}</p>}
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label>Categorias</Label>
+              <Label>Categorías</Label>
               <div className="grid grid-cols-2 gap-2 rounded-md border p-3 md:grid-cols-3">
                 {store.categories.map((category) => {
                   const checked = form.categoryIds.includes(category.id)
@@ -468,7 +494,7 @@ export default function SuppliersPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="supplier-credit">Dias de credito</Label>
+              <Label htmlFor="supplier-credit">Días de crédito</Label>
               <Input
                 id="supplier-credit"
                 type="number"

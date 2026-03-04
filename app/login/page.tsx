@@ -130,7 +130,7 @@ export default function LoginPage() {
     const normalizedPassword = password.trim()
 
     if (!normalizedEmail || !normalizedPassword) {
-      setError("Ingresa email y contrasena validos.")
+      setError("Ingresa email y contraseña válidos.")
       setIsLoading(false)
       return
     }
@@ -149,7 +149,7 @@ export default function LoginPage() {
       })
       router.replace("/monitoring")
     } else {
-      setError(response.error ?? "Credenciales invalidas")
+      setError(response.error ?? "Credenciales inválidas")
     }
 
     setIsLoading(false)
@@ -183,7 +183,7 @@ export default function LoginPage() {
     })
     const parsed = response.ok ? parseRecoveryStartPayload(response.data) : null
     if (!response.ok || !parsed) {
-      setResetError(response.error ?? "No se pudo iniciar la recuperacion.")
+      setResetError(response.error ?? "No se pudo iniciar la recuperación.")
       setIsResetLoading(false)
       return
     }
@@ -198,7 +198,7 @@ export default function LoginPage() {
   const handleRecoveryVerify = async () => {
     setResetError("")
     if (!recoveryToken) {
-      setResetError("La sesion de recuperacion no es valida.")
+      setResetError("La sesión de recuperación no es válida.")
       return
     }
 
@@ -231,15 +231,15 @@ export default function LoginPage() {
   const handleRecoveryResetPassword = async () => {
     setResetError("")
     if (!resetToken) {
-      setResetError("El token de restablecimiento no es valido.")
+      setResetError("El token de restablecimiento no es válido.")
       return
     }
     if (newPassword.trim().length < 8) {
-      setResetError("La nueva contrasena debe tener al menos 8 caracteres.")
+      setResetError("La nueva contraseña debe tener al menos 8 caracteres.")
       return
     }
     if (newPassword !== confirmPassword) {
-      setResetError("La confirmacion de contrasena no coincide.")
+      setResetError("La confirmación de contraseña no coincide.")
       return
     }
 
@@ -249,14 +249,14 @@ export default function LoginPage() {
       newPassword,
     })
     if (!response.ok) {
-      setResetError(response.error ?? "No se pudo restablecer la contrasena.")
+      setResetError(response.error ?? "No se pudo restablecer la contraseña.")
       setIsResetLoading(false)
       return
     }
 
     toast({
-      title: "Contrasena actualizada",
-      description: "Ya puedes iniciar sesion con tu nueva contrasena.",
+      title: "Contraseña actualizada",
+      description: "Ya puedes iniciar sesión con tu nueva contraseña.",
     })
     setIsResetOpen(false)
     resetRecoveryState()
@@ -267,10 +267,10 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <div className="mb-4">
-            <h1 className="text-3xl font-bold text-primary">Sistema AGUILERA21</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Gestion Administrativa de activos industriales</p>
+            <h1 className="text-3xl font-bold text-primary">SYMBIOS</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Gestión administrativa de activos industriales</p>
           </div>
-          <CardTitle className="text-2xl font-bold">Iniciar Sesion</CardTitle>
+          <CardTitle className="text-2xl font-bold">Iniciar sesión</CardTitle>
           <CardDescription>Ingresa tus credenciales para acceder al sistema</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -304,9 +304,9 @@ export default function LoginPage() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password">Contrasena</Label>
+                <Label htmlFor="password">Contraseña</Label>
                 <Button type="button" variant="link" className="px-0 text-xs" onClick={() => setIsResetOpen(true)}>
-                  Olvidaste tu contrasena?
+                  ¿Olvidaste tu contraseña?
                 </Button>
               </div>
               <Input
@@ -333,10 +333,10 @@ export default function LoginPage() {
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Iniciando sesion...
+                  Iniciando sesión...
                 </>
               ) : (
-                "Iniciar Sesion"
+                "Iniciar sesión"
               )}
             </Button>
           </CardFooter>
@@ -354,11 +354,11 @@ export default function LoginPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Recuperar contrasena</DialogTitle>
+            <DialogTitle>Recuperar contraseña</DialogTitle>
             <DialogDescription>
               {resetStep === "identify" && "Ingresa tu usuario o email para mostrar tus preguntas de seguridad."}
               {resetStep === "questions" && "Responde correctamente tus preguntas de seguridad."}
-              {resetStep === "password" && "Define una nueva contrasena para tu cuenta."}
+              {resetStep === "password" && "Define una nueva contraseña para tu cuenta."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -405,7 +405,7 @@ export default function LoginPage() {
             {resetStep === "password" && (
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <Label htmlFor="reset-new-password">Nueva contrasena</Label>
+                  <Label htmlFor="reset-new-password">Nueva contraseña</Label>
                   <Input
                     id="reset-new-password"
                     type="password"
@@ -416,7 +416,7 @@ export default function LoginPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="reset-confirm-password">Confirmar contrasena</Label>
+                  <Label htmlFor="reset-confirm-password">Confirmar contraseña</Label>
                   <Input
                     id="reset-confirm-password"
                     type="password"
@@ -445,7 +445,7 @@ export default function LoginPage() {
             )}
             {resetStep === "password" && (
               <Button onClick={handleRecoveryResetPassword} disabled={isResetLoading}>
-                Restablecer contrasena
+                Restablecer contraseña
               </Button>
             )}
           </DialogFooter>
