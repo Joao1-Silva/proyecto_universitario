@@ -13,12 +13,15 @@ from .routes.categories import router as categories_router
 from .routes.company_settings import router as company_settings_router
 from .routes.finanzas import router as finanzas_router
 from .routes.inventory import router as inventory_router
+from .routes.invoices import router as invoices_router
 from .routes.late_fees import router as late_fees_router
 from .routes.monitoring import router as monitoring_router
+from .routes.payments import router as payments_router
 from .routes.price_lists import router as price_lists_router
 from .routes.products import router as products_router
 from .routes.purchase_orders import router as purchase_orders_router
 from .routes.reports import router as reports_router
+from .routes.audit_logs import router as audit_logs_router
 from .routes.security_questions import router as security_questions_router
 from .routes.suppliers import router as suppliers_router
 from .routes.users import router as users_router
@@ -78,7 +81,10 @@ app.include_router(inventory_router)
 app.include_router(finanzas_router)
 app.include_router(monitoring_router)
 app.include_router(reports_router)
+app.include_router(audit_logs_router)
 app.include_router(users_router)
 app.include_router(security_questions_router)
 app.include_router(company_settings_router)
 app.include_router(late_fees_router)
+app.include_router(invoices_router)
+app.include_router(payments_router)

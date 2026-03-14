@@ -36,5 +36,6 @@ electron-dist/
 __pycache__/
 *.pyc
 *.sqlite
+backend/portable.db
 *.log
 .env

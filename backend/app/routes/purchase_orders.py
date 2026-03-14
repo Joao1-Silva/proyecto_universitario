@@ -658,8 +658,6 @@ def remove_purchase_order_item_route(
                 **item,
                 "removedBySuperadmin": True,
                 "removedBySuperadminReason": reason,
-                "removedBy": current_user.id,
-                "removedAt": now,
             }
         )
 

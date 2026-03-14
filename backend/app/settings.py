@@ -5,7 +5,9 @@ from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(BACKEND_ROOT / ".env")
+# Prefer the project-local backend/.env over unrelated machine-level variables
+# so local runs remain tied to this repository's intended database.
+load_dotenv(BACKEND_ROOT / ".env", override=True)
 
 
 class Settings(BaseSettings):
@@ -46,7 +48,7 @@ class Settings(BaseSettings):
     password_recovery_reset_token_minutes: int = 10
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=BACKEND_ROOT / ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

@@ -499,6 +499,169 @@ class RbacRecoveryReportsTests(unittest.TestCase):
         )
         self.assertEqual(exceed_installment.status_code, 422, exceed_installment.text)
 
+    def test_08_purchase_order_remove_item_updates_totals(self) -> None:
+        superadmin_token = self._login("juan.perez@empresa.com", "Admin456!")
+
+        categories_response = self.client.get("/categories", headers=self._headers(superadmin_token))
+        self.assertEqual(categories_response.status_code, 200, categories_response.text)
+        category_id = categories_response.json()["data"][0]["id"]
+
+        supplier_id = self._create_supplier(superadmin_token, category_id, "REMOVEITEM")
+
+        products_response = self.client.get("/products", headers=self._headers(superadmin_token))
+        self.assertEqual(products_response.status_code, 200, products_response.text)
+        products = products_response.json().get("data", [])
+        if not products:
+            create_product = self.client.post(
+                "/products",
+                headers=self._headers(superadmin_token),
+                json={
+                    "categoryId": category_id,
+                    "name": "Producto Remove Item",
+                    "description": "Producto para remove item",
+                    "unit": "unidad",
+                    "isTypical": True,
+                    "isActive": True,
+                },
+            )
+            self.assertEqual(create_product.status_code, 201, create_product.text)
+            product_id = create_product.json()["data"]["id"]
+        else:
+            product_id = products[0]["id"]
+
+        create_response = self.client.post(
+            "/purchase-orders",
+            headers=self._headers(superadmin_token),
+            json={
+                "supplierId": supplier_id,
+                "date": "2026-03-20",
+                "items": [
+                    {
+                        "productId": product_id,
+                        "description": "Linea principal",
+                        "quantity": 2,
+                        "unit": "unidad",
+                        "unitPrice": 50,
+                        "categoryId": category_id,
+                    },
+                    {
+                        "productId": product_id,
+                        "description": "Linea removible",
+                        "quantity": 1,
+                        "unit": "unidad",
+                        "unitPrice": 25,
+                        "categoryId": category_id,
+                    },
+                ],
+                "reason": "Prueba remove item",
+            },
+        )
+        self.assertEqual(create_response.status_code, 201, create_response.text)
+        created_order = create_response.json()["data"]
+        purchase_order_id = created_order["id"]
+        removable_item_id = created_order["items"][1]["id"]
+
+        submit_response = self.client.post(
+            f"/purchase-orders/{purchase_order_id}/submit",
+            headers=self._headers(superadmin_token),
+        )
+        self.assertEqual(submit_response.status_code, 200, submit_response.text)
+
+        remove_response = self.client.post(
+            f"/purchase-orders/{purchase_order_id}/items/{removable_item_id}/remove",
+            headers=self._headers(superadmin_token),
+            json={"reason": "Remove item test"},
+        )
+        self.assertEqual(remove_response.status_code, 200, remove_response.text)
+        payload = remove_response.json()["data"]
+        removed_item = next(item for item in payload["items"] if item["id"] == removable_item_id)
+        self.assertTrue(removed_item["removedBySuperadmin"])
+        self.assertEqual(removed_item["removedBySuperadminReason"], "Remove item test")
+        self.assertEqual(payload["subtotal"], 100.0)
+        self.assertEqual(payload["tax"], 16.0)
+        self.assertEqual(payload["total"], 116.0)
+
+    def test_09_legacy_invoice_payment_and_audit_routes_are_available(self) -> None:
+        superadmin_token = self._login("juan.perez@empresa.com", "Admin456!")
+
+        categories_response = self.client.get("/categories", headers=self._headers(superadmin_token))
+        self.assertEqual(categories_response.status_code, 200, categories_response.text)
+        category_id = categories_response.json()["data"][0]["id"]
+
+        supplier_id = self._create_supplier(superadmin_token, category_id, "LEGACYROUTES")
+
+        products_response = self.client.get("/products", headers=self._headers(superadmin_token))
+        self.assertEqual(products_response.status_code, 200, products_response.text)
+        products = products_response.json().get("data", [])
+        if not products:
+            create_product = self.client.post(
+                "/products",
+                headers=self._headers(superadmin_token),
+                json={
+                    "categoryId": category_id,
+                    "name": "Producto Legacy Routes",
+                    "description": "Producto para rutas legacy",
+                    "unit": "unidad",
+                    "isTypical": True,
+                    "isActive": True,
+                },
+            )
+            self.assertEqual(create_product.status_code, 201, create_product.text)
+            product_id = create_product.json()["data"]["id"]
+        else:
+            product_id = products[0]["id"]
+
+        purchase_order_id = self._create_purchase_order(superadmin_token, supplier_id, product_id, category_id)
+
+        invoice_response = self.client.post(
+            "/invoices",
+            headers=self._headers(superadmin_token),
+            json={
+                "purchaseOrderId": purchase_order_id,
+                "invoiceNumber": "FAC-LEGACY-001",
+                "issueDate": "2026-03-20",
+                "dueDate": "2026-03-25",
+                "amount": 100,
+            },
+        )
+        self.assertEqual(invoice_response.status_code, 201, invoice_response.text)
+        invoice_id = invoice_response.json()["data"]["id"]
+
+        invoice_detail = self.client.get(
+            f"/invoices/{invoice_id}",
+            headers=self._headers(superadmin_token),
+        )
+        self.assertEqual(invoice_detail.status_code, 200, invoice_detail.text)
+
+        payment_response = self.client.post(
+            "/payments",
+            headers=self._headers(superadmin_token),
+            json={
+                "invoiceId": invoice_id,
+                "date": "2026-03-21",
+                "amount": 50,
+                "method": "transfer",
+                "reference": "PAY-LEGACY-001",
+                "reason": "Pago parcial legacy",
+            },
+        )
+        self.assertEqual(payment_response.status_code, 201, payment_response.text)
+        payment_id = payment_response.json()["data"]["id"]
+
+        payment_detail = self.client.get(
+            f"/payments/{payment_id}",
+            headers=self._headers(superadmin_token),
+        )
+        self.assertEqual(payment_detail.status_code, 200, payment_detail.text)
+
+        audit_logs = self.client.get(
+            "/audit-logs",
+            headers=self._headers(superadmin_token),
+            params={"page": 1, "pageSize": 20},
+        )
+        self.assertEqual(audit_logs.status_code, 200, audit_logs.text)
+        self.assertIn("data", audit_logs.json())
+
 
 if __name__ == "__main__":
     unittest.main()
