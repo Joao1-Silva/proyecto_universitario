@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -8,11 +8,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..audit import log_audit_event
+from ..inventory_services import record_inventory_entry_for_purchase_order
 from ..models import (
     FinanceInstallmentModel,
     FinanceLateFeeModel,
     FinancePaymentModel,
     PurchaseOrderModel,
+    SupplierModel,
 )
 from ..schemas import (
     FinanceInstallmentCreate,
@@ -83,6 +85,21 @@ def _ensure_purchase_order(session: Session, purchase_order_id: str) -> Purchase
     return purchase_order
 
 
+def _ensure_supplier(session: Session, supplier_id: str) -> SupplierModel:
+    supplier = session.get(SupplierModel, supplier_id)
+    if supplier is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proveedor no encontrado.")
+    return supplier
+
+
+def _ensure_finance_order_status(order: PurchaseOrderModel) -> None:
+    if order.status not in {"approved", "certified", "received"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Solo se pueden registrar pagos o abonos para órdenes aprobadas, certificadas o recibidas.",
+        )
+
+
 def _sum_installments_by_order(session: Session) -> dict[str, float]:
     rows = session.execute(
         select(
@@ -93,7 +110,45 @@ def _sum_installments_by_order(session: Session) -> dict[str, float]:
     return {str(order_id): round(float(total), 2) for order_id, total in rows}
 
 
-def _build_order_balance_summary(order: PurchaseOrderModel, paid_amount: float) -> dict:
+def _build_credit_due_fields(
+    order: PurchaseOrderModel,
+    supplier: SupplierModel | None,
+    remaining_amount: float,
+    *,
+    today: datetime | None = None,
+) -> dict:
+    credit_days = max(int(supplier.credit_days if supplier is not None else 0), 0)
+    if credit_days <= 0:
+        return {
+            "creditDays": 0,
+            "creditDueDate": None,
+            "daysUntilCreditDue": None,
+            "isDueToday": False,
+            "isOverdue": False,
+        }
+
+    base_date = order.approved_at or order.date
+    due_date = (base_date + timedelta(days=credit_days)).date()
+    today_date = (today or datetime.utcnow()).date()
+    days_until_due = (due_date - today_date).days
+    has_pending_balance = remaining_amount > 0
+
+    return {
+        "creditDays": credit_days,
+        "creditDueDate": due_date.isoformat(),
+        "daysUntilCreditDue": days_until_due,
+        "isDueToday": has_pending_balance and days_until_due == 0,
+        "isOverdue": has_pending_balance and days_until_due < 0,
+    }
+
+
+def _build_order_balance_summary(
+    order: PurchaseOrderModel,
+    supplier: SupplierModel | None,
+    paid_amount: float,
+    *,
+    today: datetime | None = None,
+) -> dict:
     total_amount = round(float(order.total), 2)
     paid_amount = round(float(paid_amount), 2)
     remaining_amount = round(max(total_amount - paid_amount, 0.0), 2)
@@ -113,6 +168,7 @@ def _build_order_balance_summary(order: PurchaseOrderModel, paid_amount: float) 
         "remainingAmount": remaining_amount,
         "status": status_value,
         "currency": "USD",
+        **_build_credit_due_fields(order, supplier, remaining_amount, today=today),
     }
 
 
@@ -126,7 +182,23 @@ def _build_finance_summaries(session: Session, purchase_order_id: str | None = N
         return []
 
     paid_by_order = _sum_installments_by_order(session)
-    return [_build_order_balance_summary(order, paid_by_order.get(order.id, 0.0)) for order in orders]
+    supplier_ids = {order.supplier_id for order in orders}
+    suppliers = (
+        session.execute(select(SupplierModel).where(SupplierModel.id.in_(supplier_ids))).scalars().all()
+        if supplier_ids
+        else []
+    )
+    supplier_by_id = {supplier.id: supplier for supplier in suppliers}
+    return [
+        _build_order_balance_summary(order, supplier_by_id.get(order.supplier_id), paid_by_order.get(order.id, 0.0))
+        for order in orders
+    ]
+
+
+def _build_current_balance(session: Session, order: PurchaseOrderModel, supplier: SupplierModel | None = None) -> dict:
+    paid_by_order = _sum_installments_by_order(session)
+    supplier_model = supplier or _ensure_supplier(session, order.supplier_id)
+    return _build_order_balance_summary(order, supplier_model, paid_by_order.get(order.id, 0.0))
 
 
 @router.get("/resumen")
@@ -161,10 +233,18 @@ def create_payment(
     current_user: AuthenticatedUser = Depends(require_permissions(Permission.FINANCE_MANAGE)),
     session: Session = Depends(get_db),
 ) -> dict:
-    if payload.amount <= 0:
+    amount = round(float(payload.amount), 2)
+    if amount <= 0:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="El monto debe ser mayor a 0.")
 
-    _ensure_purchase_order(session, payload.purchaseOrderId)
+    purchase_order = _ensure_purchase_order(session, payload.purchaseOrderId)
+    _ensure_finance_order_status(purchase_order)
+    supplier = _ensure_supplier(session, purchase_order.supplier_id)
+    current_balance = _build_current_balance(session, purchase_order, supplier)
+    remaining_amount = float(current_balance["remainingAmount"])
+    if remaining_amount <= 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="La orden ya está pagada.")
+
     payment_type = payload.paymentType.strip().lower()
     if payment_type not in {"contado", "credito"}:
         raise HTTPException(
@@ -179,33 +259,84 @@ def create_payment(
             detail="El modo de pago es obligatorio para pagos de contado.",
         )
 
+    if amount > remaining_amount:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El pago no puede superar el saldo restante.",
+        )
+
+    if payment_type == "contado" and round(amount, 2) != round(remaining_amount, 2):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Los pagos de contado deben registrar el saldo completo de la orden.",
+        )
+
+    if supplier.credit_days <= 0:
+        if payment_type != "contado":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="El proveedor no tiene días de crédito. Solo se admite pago de contado.",
+            )
+
+    now = datetime.utcnow()
     model = FinancePaymentModel(
         id=f"fpay_{uuid4()}",
         purchase_order_id=payload.purchaseOrderId,
-        amount=round(float(payload.amount), 2),
+        amount=amount,
         currency=_normalize_usd_currency(payload.currency),
         payment_type=payment_type,
         payment_mode=payment_mode,
         reference=payload.reference,
         concept=payload.concept,
         created_by=current_user.id,
-        created_at=datetime.utcnow(),
+        created_at=now,
+    )
+    installment = FinanceInstallmentModel(
+        id=f"fins_{uuid4()}",
+        purchase_order_id=payload.purchaseOrderId,
+        finance_payment_id=model.id,
+        amount=amount,
+        currency=model.currency,
+        concept=payload.concept,
+        created_by=current_user.id,
+        created_at=now,
     )
     session.add(model)
+    session.add(installment)
+    moved_items = record_inventory_entry_for_purchase_order(
+        session,
+        purchase_order,
+        created_by=current_user.id,
+        reason="FINANCE_PAYMENT",
+    )
 
     log_audit_event(
         session,
         action="finance_payment_create",
         entity_type="finance_payment",
         entity_id=model.id,
-        metadata={"purchaseOrderId": model.purchase_order_id, "amount": model.amount, "paymentType": model.payment_type},
+        metadata={
+            "purchaseOrderId": model.purchase_order_id,
+            "amount": model.amount,
+            "paymentType": model.payment_type,
+            "generatedInstallmentId": installment.id,
+            "inventoryEntries": moved_items,
+        },
         request=request,
         user=current_user,
     )
     session.commit()
     session.refresh(model)
 
-    return {"data": _serialize_payment(model), "meta": {"source": "api"}}
+    payment_payload = _serialize_payment(model)
+    payment_payload["balance"] = _build_order_balance_summary(
+        purchase_order,
+        supplier,
+        float(current_balance["paidAmount"]) + amount,
+    )
+    payment_payload["generatedInstallmentId"] = installment.id
+    payment_payload["inventoryEntries"] = moved_items
+    return {"data": payment_payload, "meta": {"source": "api"}}
 
 
 @router.get("/abonos")
@@ -233,14 +364,21 @@ def create_installment(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="El abono debe ser mayor a 0.")
 
     purchase_order = _ensure_purchase_order(session, payload.purchaseOrderId)
+    _ensure_finance_order_status(purchase_order)
+    supplier = _ensure_supplier(session, purchase_order.supplier_id)
+    if supplier.credit_days <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El proveedor no tiene días de crédito. Debe registrar un pago completo, no abonos.",
+        )
+
     if payload.financePaymentId:
         payment = session.get(FinancePaymentModel, payload.financePaymentId)
         if payment is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pago financiero no encontrado.")
 
-    paid_by_order = _sum_installments_by_order(session)
-    current_paid = paid_by_order.get(purchase_order.id, 0.0)
-    current_balance = _build_order_balance_summary(purchase_order, current_paid)
+    current_balance = _build_current_balance(session, purchase_order, supplier)
+    current_paid = float(current_balance["paidAmount"])
 
     if current_balance["remainingAmount"] <= 0:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="La orden ya está pagada.")
@@ -262,22 +400,29 @@ def create_installment(
         created_at=datetime.utcnow(),
     )
     session.add(model)
+    moved_items = record_inventory_entry_for_purchase_order(
+        session,
+        purchase_order,
+        created_by=current_user.id,
+        reason="FINANCE_INSTALLMENT",
+    )
 
     log_audit_event(
         session,
         action="finance_installment_create",
         entity_type="finance_installment",
         entity_id=model.id,
-        metadata={"purchaseOrderId": model.purchase_order_id, "amount": model.amount},
+        metadata={"purchaseOrderId": model.purchase_order_id, "amount": model.amount, "inventoryEntries": moved_items},
         request=request,
         user=current_user,
     )
     session.commit()
     session.refresh(model)
 
-    updated_balance = _build_order_balance_summary(purchase_order, current_paid + amount)
+    updated_balance = _build_order_balance_summary(purchase_order, supplier, current_paid + amount)
     payload_data = _serialize_installment(model)
     payload_data["balance"] = updated_balance
+    payload_data["inventoryEntries"] = moved_items
 
     return {"data": payload_data, "meta": {"source": "api"}}
 

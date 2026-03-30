@@ -19,8 +19,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { createApiClient } from "@/lib/api-client"
+import type { FinanceBalanceSummary } from "@/lib/api-types"
 import { getCachedDataMode, resolveDataSource, type DataMode } from "@/lib/data-source"
-import { roleLabel } from "@/lib/permissions"
+import { getPermissions, roleLabel } from "@/lib/permissions"
 import { getCurrentUser, signOut, useAppStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
@@ -33,15 +34,23 @@ const buildInitials = (name?: string) => {
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
 }
 
+const parseList = <T,>(payload: unknown): T[] => {
+  if (typeof payload !== "object" || payload === null) return []
+  const data = (payload as { data?: unknown }).data
+  return Array.isArray(data) ? (data as T[]) : []
+}
+
 export function TopNav() {
   const { theme, setTheme } = useTheme()
   const router = useRouter()
   const pathname = usePathname()
   const store = useAppStore()
   const currentUser = getCurrentUser(store)
+  const permissions = getPermissions(currentUser)
   const [query, setQuery] = useState("")
   const [isFocused, setIsFocused] = useState(false)
   const [dataMode, setDataMode] = useState<DataMode>(getCachedDataMode())
+  const [financeSummaries, setFinanceSummaries] = useState<FinanceBalanceSummary[]>([])
   const apiClient = useMemo(() => createApiClient({ timeoutMs: 2500, retries: 0 }), [])
 
   const searchResults = useMemo(() => {
@@ -67,11 +76,21 @@ export function TopNav() {
   const notifications = useMemo(() => {
     const pendingOrders = store.purchaseOrders.filter((order) => order.status === "pending")
     const rejectedOrders = store.purchaseOrders.filter((order) => order.status === "rejected")
+    const openFinanceSummaries = financeSummaries.filter((summary) => summary.remainingAmount > 0)
+    const overdueFinanceSummaries = openFinanceSummaries.filter((summary) => summary.isOverdue)
+    const dueTodayFinanceSummaries = openFinanceSummaries.filter((summary) => summary.isDueToday)
     return {
       pendingCount: pendingOrders.length,
       rejectedCount: rejectedOrders.length,
+      overdueCount: overdueFinanceSummaries.length,
+      dueTodayCount: dueTodayFinanceSummaries.length,
+      overdueFinanceSummaries,
+      dueTodayFinanceSummaries,
     }
-  }, [store.purchaseOrders])
+  }, [financeSummaries, store.purchaseOrders])
+
+  const totalNotificationCount =
+    notifications.pendingCount + notifications.rejectedCount + notifications.overdueCount + notifications.dueTodayCount
 
   const showResults = isFocused && query.trim().length > 1
 
@@ -85,6 +104,31 @@ export function TopNav() {
     setQuery("")
     setIsFocused(false)
   }, [pathname])
+
+  useEffect(() => {
+    if (!currentUser || !permissions.canViewFinance) {
+      setFinanceSummaries([])
+      return
+    }
+
+    let cancelled = false
+
+    const loadFinanceSummaries = async () => {
+      const response = await apiClient.request<unknown>("GET", "/finanzas/resumen")
+      if (!response.ok || cancelled) return
+      setFinanceSummaries(parseList<FinanceBalanceSummary>(response.data))
+    }
+
+    void loadFinanceSummaries()
+    const intervalId = window.setInterval(() => {
+      void loadFinanceSummaries()
+    }, 60_000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [apiClient, currentUser, permissions.canViewFinance])
 
   useEffect(() => {
     let cancelled = false
@@ -184,8 +228,13 @@ export function TopNav() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-5 w-5" />
+              {totalNotificationCount > 0 ? (
+                <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+                  {totalNotificationCount > 9 ? "9+" : totalNotificationCount}
+                </span>
+              ) : null}
               <span className="sr-only">Notificaciones</span>
             </Button>
           </DropdownMenuTrigger>
@@ -208,6 +257,36 @@ export function TopNav() {
                   : "No hay OC rechazadas"}
               </span>
             </DropdownMenuItem>
+            {permissions.canViewFinance ? (
+              <DropdownMenuItem className="flex flex-col items-start gap-1">
+                <span className="text-sm font-medium">Deudas vencidas</span>
+                <span className="text-xs text-muted-foreground">
+                  {notifications.overdueCount > 0
+                    ? `${notifications.overdueCount} orden(es) de compra deben pagarse`
+                    : "No hay deudas vencidas"}
+                </span>
+                {notifications.overdueFinanceSummaries[0] ? (
+                  <span className="text-xs text-muted-foreground">
+                    {notifications.overdueFinanceSummaries[0].orderNumber} - {notifications.overdueFinanceSummaries[0].supplierName}
+                  </span>
+                ) : null}
+              </DropdownMenuItem>
+            ) : null}
+            {permissions.canViewFinance ? (
+              <DropdownMenuItem className="flex flex-col items-start gap-1">
+                <span className="text-sm font-medium">Créditos que vencen hoy</span>
+                <span className="text-xs text-muted-foreground">
+                  {notifications.dueTodayCount > 0
+                    ? `${notifications.dueTodayCount} orden(es) vencen hoy`
+                    : "No hay vencimientos para hoy"}
+                </span>
+                {notifications.dueTodayFinanceSummaries[0] ? (
+                  <span className="text-xs text-muted-foreground">
+                    {notifications.dueTodayFinanceSummaries[0].orderNumber} - {notifications.dueTodayFinanceSummaries[0].supplierName}
+                  </span>
+                ) : null}
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
 

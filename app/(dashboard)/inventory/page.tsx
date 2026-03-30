@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useMemo, useState } from "react"
 
@@ -16,6 +16,8 @@ import { getPermissions } from "@/lib/permissions"
 import { getCurrentUser, useAppStore } from "@/lib/store"
 
 const apiClient = createApiClient({ timeoutMs: 3500, retries: 1 })
+const CANONICAL_DEPARTMENT_NAMES = ["Mantenimiento", "Operaciones", "Administracion", "Laborales"] as const
+const CANONICAL_DEPARTMENT_ORDER = new Map<string, number>(CANONICAL_DEPARTMENT_NAMES.map((name, index) => [name, index]))
 
 const parseList = <T,>(payload: unknown): T[] => {
   if (typeof payload !== "object" || payload === null) return []
@@ -35,8 +37,6 @@ export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
-
-  const [inForm, setInForm] = useState({ productId: "", qty: 0, reason: "" })
   const [outForm, setOutForm] = useState({ productId: "", qty: 0, departmentId: "", reason: "" })
 
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products])
@@ -61,7 +61,16 @@ export default function InventoryPage() {
 
     if (itemsRes.ok) setItems(parseList<InventoryItem>(itemsRes.data))
     if (movRes.ok) setMovements(parseList<InventoryMovement>(movRes.data))
-    if (depRes.ok) setDepartments(parseList<Department>(depRes.data))
+    if (depRes.ok) {
+      const nextDepartments = parseList<Department>(depRes.data)
+        .filter((department) => CANONICAL_DEPARTMENT_ORDER.has(department.name))
+        .sort(
+          (left, right) =>
+            (CANONICAL_DEPARTMENT_ORDER.get(left.name) ?? CANONICAL_DEPARTMENT_ORDER.size) -
+            (CANONICAL_DEPARTMENT_ORDER.get(right.name) ?? CANONICAL_DEPARTMENT_ORDER.size),
+        )
+      setDepartments(nextDepartments)
+    }
     if (prodRes.ok) setProducts(parseList<Product>(prodRes.data))
 
     setIsLoading(false)
@@ -70,29 +79,6 @@ export default function InventoryPage() {
   useEffect(() => {
     void loadData()
   }, [])
-
-  const registerIn = async () => {
-    if (!permissions.canManageInventory) return
-    if (!inForm.productId || inForm.qty <= 0) {
-      toast({ title: "Datos incompletos", description: "Producto y cantidad son obligatorios.", variant: "destructive" })
-      return
-    }
-
-    const response = await apiClient.request<unknown>("POST", "/inventory/movements/in", {
-      productId: inForm.productId,
-      qty: Number(inForm.qty),
-      reason: inForm.reason || null,
-    })
-
-    if (!response.ok) {
-      toast({ title: "No se pudo registrar entrada", description: response.error ?? "Intenta nuevamente.", variant: "destructive" })
-      return
-    }
-
-    toast({ title: "Entrada registrada", description: "Stock actualizado correctamente." })
-    setInForm({ productId: "", qty: 0, reason: "" })
-    await loadData()
-  }
 
   const registerOut = async () => {
     if (!permissions.canManageInventory) return
@@ -127,7 +113,7 @@ export default function InventoryPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Almacén interno</h1>
-          <p className="mt-1 text-muted-foreground">Gestión de entradas y salidas por departamento</p>
+          <p className="mt-1 text-muted-foreground">Stock automatico y salidas por departamento</p>
         </div>
         <Alert variant="destructive">
           <AlertDescription>No tienes permisos para ver inventario.</AlertDescription>
@@ -140,7 +126,9 @@ export default function InventoryPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Almacén interno</h1>
-        <p className="mt-1 text-muted-foreground">Entradas automáticas por OC certificada/recibida y salidas por departamento</p>
+        <p className="mt-1 text-muted-foreground">
+          Las entradas se generan automaticamente cuando Finanzas registra pagos o abonos. Aqui solo registras salidas.
+        </p>
       </div>
 
       {error && (
@@ -149,104 +137,72 @@ export default function InventoryPage() {
         </Alert>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Registrar entrada</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-2">
-              <Label>Producto</Label>
-              <Select value={inForm.productId} onValueChange={(value) => setInForm((prev) => ({ ...prev, productId: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona producto" />
-                </SelectTrigger>
-                <SelectContent>
-                  {products.map((product) => (
-                    <SelectItem key={product.id} value={product.id}>
-                      {product.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Registrar salida</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Producto</Label>
+            <Select value={outForm.productId} onValueChange={(value) => setOutForm((prev) => ({ ...prev, productId: value }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona producto" />
+              </SelectTrigger>
+              <SelectContent>
+                {products.map((product) => (
+                  <SelectItem key={product.id} value={product.id}>
+                    {product.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-            <div className="space-y-2">
-              <Label>Cantidad</Label>
-              <Input type="number" min={0} value={inForm.qty} onChange={(event) => setInForm((prev) => ({ ...prev, qty: Number(event.target.value) }))} />
-            </div>
+          <div className="space-y-2">
+            <Label>Departamento destino</Label>
+            <Select
+              value={outForm.departmentId}
+              onValueChange={(value) => setOutForm((prev) => ({ ...prev, departmentId: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona departamento" />
+              </SelectTrigger>
+              <SelectContent>
+                {departments.map((department) => (
+                  <SelectItem key={department.id} value={department.id}>
+                    {department.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-            <div className="space-y-2">
-              <Label>Motivo</Label>
-              <Input value={inForm.reason} onChange={(event) => setInForm((prev) => ({ ...prev, reason: event.target.value }))} placeholder="Opcional" />
-            </div>
+          <div className="space-y-2">
+            <Label>Cantidad</Label>
+            <Input
+              type="number"
+              min={0}
+              value={outForm.qty}
+              onChange={(event) => setOutForm((prev) => ({ ...prev, qty: Number(event.target.value) }))}
+            />
+          </div>
 
-            <Button onClick={() => void registerIn()} disabled={!permissions.canManageInventory}>
-              Registrar entrada
-            </Button>
-          </CardContent>
-        </Card>
+          <div className="space-y-2">
+            <Label>Motivo</Label>
+            <Input
+              value={outForm.reason}
+              onChange={(event) => setOutForm((prev) => ({ ...prev, reason: event.target.value }))}
+              placeholder="Obligatorio"
+            />
+          </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Registrar salida</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-2">
-              <Label>Producto</Label>
-              <Select value={outForm.productId} onValueChange={(value) => setOutForm((prev) => ({ ...prev, productId: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona producto" />
-                </SelectTrigger>
-                <SelectContent>
-                  {products.map((product) => (
-                    <SelectItem key={product.id} value={product.id}>
-                      {product.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Departamento destino</Label>
-              <Select
-                value={outForm.departmentId}
-                onValueChange={(value) => setOutForm((prev) => ({ ...prev, departmentId: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona departamento" />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((department) => (
-                    <SelectItem key={department.id} value={department.id}>
-                      {department.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Cantidad</Label>
-              <Input type="number" min={0} value={outForm.qty} onChange={(event) => setOutForm((prev) => ({ ...prev, qty: Number(event.target.value) }))} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Motivo</Label>
-              <Input
-                value={outForm.reason}
-                onChange={(event) => setOutForm((prev) => ({ ...prev, reason: event.target.value }))}
-                placeholder="Obligatorio"
-              />
-            </div>
-
+          <div className="md:col-span-2">
             <Button onClick={() => void registerOut()} disabled={!permissions.canManageInventory}>
               Registrar salida
             </Button>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -260,7 +216,7 @@ export default function InventoryPage() {
                   <TableHead>Producto</TableHead>
                   <TableHead>Stock</TableHead>
                   <TableHead>Tipo activo</TableHead>
-                  <TableHead>Ubicación</TableHead>
+                  <TableHead>Ubicacion</TableHead>
                   <TableHead>Actualizado</TableHead>
                 </TableRow>
               </TableHeader>

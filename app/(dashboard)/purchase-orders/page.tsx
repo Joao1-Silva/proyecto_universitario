@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
 import { CheckCircle2, ClipboardList, Plus, Search, XCircle } from "lucide-react"
 
 import { useToast } from "@/hooks/use-toast"
@@ -69,6 +70,12 @@ interface DraftItem extends PurchaseOrderItem {
   qtyDraft: number
 }
 
+type PurchaseOrderTransitionAction = "submit" | "approve" | "reject" | "certify" | "receive"
+
+type ReasonDialogState =
+  | { kind: "reject"; order: PurchaseOrder }
+  | { kind: "remove-item"; orderId: string; itemId: string }
+
 export default function PurchaseOrdersPage() {
   const store = useAppStore()
   const currentUser = getCurrentUser(store)
@@ -94,6 +101,9 @@ export default function PurchaseOrdersPage() {
   const [itemDrafts, setItemDrafts] = useState<Record<string, DraftItem>>({})
 
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
+  const [reasonDialogState, setReasonDialogState] = useState<ReasonDialogState | null>(null)
+  const [reasonInput, setReasonInput] = useState("")
+  const [isReasonActionPending, setIsReasonActionPending] = useState(false)
 
   const totalPages = Math.max(Math.ceil(total / pageSize), 1)
 
@@ -130,18 +140,32 @@ export default function PurchaseOrdersPage() {
     void loadPage(1)
   }, [])
 
+  const selectedSupplier = suppliers.find((supplier) => supplier.id === selectedSupplierId)
+  const selectedSupplierCategoryIds = useMemo(() => new Set(selectedSupplier?.categoryIds ?? []), [selectedSupplier])
+
+  const availableCategories = useMemo(() => {
+    if (!selectedSupplier || selectedSupplierCategoryIds.size === 0) return []
+    return categories.filter((category) => selectedSupplierCategoryIds.has(category.id))
+  }, [categories, selectedSupplier, selectedSupplierCategoryIds])
+
   const filteredProducts = useMemo(() => {
+    if (!selectedSupplier) return []
     const term = productSearch.trim().toLowerCase()
     return products.filter((product) => {
+      if (!selectedSupplierCategoryIds.has(product.categoryId)) return false
       if (selectedCategoryId !== "all" && product.categoryId !== selectedCategoryId) return false
       if (!term) return true
       return product.name.toLowerCase().includes(term) || (product.description ?? "").toLowerCase().includes(term)
     })
-  }, [productSearch, products, selectedCategoryId])
-
-  const selectedSupplier = suppliers.find((supplier) => supplier.id === selectedSupplierId)
+  }, [productSearch, products, selectedCategoryId, selectedSupplier, selectedSupplierCategoryIds])
   const selectedItems = Object.values(itemDrafts).filter((item) => item.qtyDraft > 0)
   const orderSubtotal = selectedItems.reduce((sum, item) => sum + item.unitPrice * item.qtyDraft, 0)
+
+  useEffect(() => {
+    if (selectedCategoryId === "all") return
+    if (availableCategories.some((category) => category.id === selectedCategoryId)) return
+    setSelectedCategoryId("all")
+  }, [availableCategories, selectedCategoryId])
 
   const openCreate = () => {
     setSelectedSupplierId("")
@@ -151,6 +175,13 @@ export default function PurchaseOrdersPage() {
     setProductSearch("")
     setItemDrafts({})
     setIsCreateDialogOpen(true)
+  }
+
+  const handleSupplierChange = (supplierId: string) => {
+    setSelectedSupplierId(supplierId)
+    setSelectedCategoryId("all")
+    setProductSearch("")
+    setItemDrafts({})
   }
 
   const setItemQty = (product: Product, qty: number) => {
@@ -240,15 +271,16 @@ export default function PurchaseOrdersPage() {
     await loadPage(1)
   }
 
-  const runTransition = async (order: PurchaseOrder, action: "submit" | "approve" | "reject" | "certify" | "receive") => {
-    let payload: Record<string, unknown> | undefined
+  const closeReasonDialog = () => {
+    setReasonDialogState(null)
+    setReasonInput("")
+  }
 
-    if (action === "reject") {
-      const reason = window.prompt("Motivo del rechazo (obligatorio):")?.trim() ?? ""
-      if (!reason) return
-      payload = { reason }
-    }
-
+  const runTransition = async (
+    order: PurchaseOrder,
+    action: PurchaseOrderTransitionAction,
+    payload?: Record<string, unknown>,
+  ) => {
     const response = await apiClient.request<unknown>("POST", `/purchase-orders/${order.id}/${action}`, payload)
     if (!response.ok) {
       toast({ title: "Operación fallida", description: response.error ?? "No se pudo actualizar la OC.", variant: "destructive" })
@@ -257,12 +289,10 @@ export default function PurchaseOrdersPage() {
 
     toast({ title: "OC actualizada", description: `Transición ejecutada: ${action}.` })
     await loadPage(page)
+    return true
   }
 
-  const removeItemBySuperadmin = async (orderId: string, itemId: string) => {
-    const reason = window.prompt("Motivo obligatorio para remover item:")?.trim() ?? ""
-    if (!reason) return
-
+  const removeItemBySuperadmin = async (orderId: string, itemId: string, reason: string) => {
     const response = await apiClient.request<unknown>("POST", `/purchase-orders/${orderId}/items/${itemId}/remove`, {
       reason,
     })
@@ -273,6 +303,44 @@ export default function PurchaseOrdersPage() {
 
     toast({ title: "Item removido", description: "El cambio quedó registrado en histórico de movimientos." })
     await loadPage(page)
+    return true
+  }
+
+  const requestTransition = async (order: PurchaseOrder, action: PurchaseOrderTransitionAction) => {
+    if (action === "reject") {
+      setReasonInput("")
+      setReasonDialogState({ kind: "reject", order })
+      return
+    }
+
+    await runTransition(order, action, action === "approve" ? {} : undefined)
+  }
+
+  const requestRemoveItemBySuperadmin = (orderId: string, itemId: string) => {
+    setReasonInput("")
+    setReasonDialogState({ kind: "remove-item", orderId, itemId })
+  }
+
+  const submitReasonAction = async () => {
+    if (!reasonDialogState) return
+
+    const reason = reasonInput.trim()
+    if (!reason) {
+      toast({ title: "Motivo requerido", description: "Debes indicar un motivo.", variant: "destructive" })
+      return
+    }
+
+    setIsReasonActionPending(true)
+    try {
+      const ok =
+        reasonDialogState.kind === "reject"
+          ? await runTransition(reasonDialogState.order, "reject", { reason })
+          : await removeItemBySuperadmin(reasonDialogState.orderId, reasonDialogState.itemId, reason)
+
+      if (ok) closeReasonDialog()
+    } finally {
+      setIsReasonActionPending(false)
+    }
   }
 
   const canAct = {
@@ -338,7 +406,7 @@ export default function PurchaseOrdersPage() {
                   </TableRow>
                 ) : (
                   orders.map((order) => (
-                    <>
+                    <Fragment key={order.id}>
                       <TableRow key={order.id}>
                         <TableCell className="font-medium">{order.orderNumber}</TableCell>
                         <TableCell>{order.supplierName}</TableCell>
@@ -360,27 +428,27 @@ export default function PurchaseOrdersPage() {
                             </Button>
 
                             {order.status === "draft" && canAct.submit && (
-                              <Button variant="outline" size="sm" onClick={() => void runTransition(order, "submit")}>
+                              <Button variant="outline" size="sm" onClick={() => void requestTransition(order, "submit")}>
                                 Enviar
                               </Button>
                             )}
                             {order.status === "pending" && canAct.approve && (
-                              <Button size="sm" onClick={() => void runTransition(order, "approve")}>
+                              <Button size="sm" onClick={() => void requestTransition(order, "approve")}>
                                 Aprobar
                               </Button>
                             )}
                             {order.status === "pending" && canAct.reject && (
-                              <Button variant="destructive" size="sm" onClick={() => void runTransition(order, "reject")}>
+                              <Button variant="destructive" size="sm" onClick={() => void requestTransition(order, "reject")}>
                                 Rechazar
                               </Button>
                             )}
                             {order.status === "approved" && canAct.certify && (
-                              <Button variant="outline" size="sm" onClick={() => void runTransition(order, "certify")}>
+                              <Button variant="outline" size="sm" onClick={() => void requestTransition(order, "certify")}>
                                 Certificar
                               </Button>
                             )}
                             {order.status === "certified" && canAct.receive && (
-                              <Button variant="outline" size="sm" onClick={() => void runTransition(order, "receive")}>
+                              <Button variant="outline" size="sm" onClick={() => void requestTransition(order, "receive")}>
                                 Recibir
                               </Button>
                             )}
@@ -439,7 +507,7 @@ export default function PurchaseOrdersPage() {
                                             <Button
                                               size="sm"
                                               variant="outline"
-                                              onClick={() => void removeItemBySuperadmin(order.id, item.id)}
+                                              onClick={() => requestRemoveItemBySuperadmin(order.id, item.id)}
                                             >
                                               Remover
                                             </Button>
@@ -454,7 +522,7 @@ export default function PurchaseOrdersPage() {
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   ))
                 )}
               </TableBody>
@@ -487,7 +555,7 @@ export default function PurchaseOrdersPage() {
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label>Proveedor</Label>
-              <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
+              <Select value={selectedSupplierId} onValueChange={handleSupplierChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona proveedor" />
                 </SelectTrigger>
@@ -499,7 +567,12 @@ export default function PurchaseOrdersPage() {
                   ))}
                 </SelectContent>
               </Select>
-              {selectedSupplier && <p className="text-xs text-muted-foreground">RIF: {selectedSupplier.rif}</p>}
+              {selectedSupplier && (
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <p>RIF: {selectedSupplier.rif}</p>
+                  <p>Categorías: {availableCategories.map((category) => category.name).join(", ") || "Sin categorías"}</p>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -525,12 +598,12 @@ export default function PurchaseOrdersPage() {
                 <div className="space-y-2">
                   <Label>Categoría</Label>
                   <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
-                    <SelectTrigger>
+                    <SelectTrigger disabled={!selectedSupplier || availableCategories.length === 0}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Todas</SelectItem>
-                      {categories.map((category) => (
+                      {availableCategories.map((category) => (
                         <SelectItem key={category.id} value={category.id}>
                           {category.name}
                         </SelectItem>
@@ -548,6 +621,7 @@ export default function PurchaseOrdersPage() {
                       value={productSearch}
                       onChange={(event) => setProductSearch(event.target.value)}
                       className="pl-8"
+                      disabled={!selectedSupplier}
                       placeholder="Nombre o descripción"
                     />
                   </div>
@@ -566,10 +640,18 @@ export default function PurchaseOrdersPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredProducts.length === 0 ? (
+                    {!selectedSupplier ? (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center text-muted-foreground">
-                          Sin productos para los filtros seleccionados.
+                          Selecciona un proveedor para ver productos según sus categorías.
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredProducts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground">
+                          {availableCategories.length === 0
+                            ? "El proveedor no tiene categorías asignadas."
+                            : "Sin productos para las categorías o filtros seleccionados."}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -624,6 +706,49 @@ export default function PurchaseOrdersPage() {
               Cancelar
             </Button>
             <Button onClick={() => void createOrder()}>Crear OC</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={reasonDialogState !== null}
+        onOpenChange={(open) => {
+          if (!open && !isReasonActionPending) closeReasonDialog()
+        }}
+      >
+        <DialogContent className="sm:max-w-md" showCloseButton={!isReasonActionPending}>
+          <DialogHeader>
+            <DialogTitle>{reasonDialogState?.kind === "remove-item" ? "Remover item" : "Rechazar orden"}</DialogTitle>
+            <DialogDescription>
+              {reasonDialogState?.kind === "remove-item"
+                ? "Indica el motivo obligatorio para remover el item seleccionado."
+                : "Indica el motivo obligatorio para rechazar la orden de compra."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="purchase-order-action-reason">Motivo</Label>
+            <Textarea
+              id="purchase-order-action-reason"
+              value={reasonInput}
+              onChange={(event) => setReasonInput(event.target.value)}
+              placeholder="Escribe el motivo"
+              rows={4}
+              disabled={isReasonActionPending}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeReasonDialog} disabled={isReasonActionPending}>
+              Cancelar
+            </Button>
+            <Button
+              variant={reasonDialogState?.kind === "remove-item" ? "outline" : "destructive"}
+              onClick={() => void submitReasonAction()}
+              disabled={isReasonActionPending}
+            >
+              {isReasonActionPending ? "Procesando..." : reasonDialogState?.kind === "remove-item" ? "Confirmar remocion" : "Confirmar rechazo"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

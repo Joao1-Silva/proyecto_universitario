@@ -10,11 +10,10 @@ from sqlalchemy.orm import Session
 
 from ..audit import log_audit_event
 from ..models import (
-    InventoryItemModel,
-    InventoryMovementModel,
     ProductModel,
     PurchaseOrderItemModel,
     PurchaseOrderModel,
+    SupplierCategoryLinkModel,
     SupplierModel,
 )
 from ..schemas import (
@@ -37,6 +36,23 @@ def _normalize_text(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def _normalize_category_ids(values: list[str] | tuple[str, ...] | set[str] | str | None) -> list[str]:
+    if not values:
+        return []
+    if isinstance(values, str):
+        values = [values]
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        category_id = str(raw).strip()
+        if not category_id or category_id in seen:
+            continue
+        seen.add(category_id)
+        normalized.append(category_id)
+    return normalized
 
 
 def _parse_datetime_input(raw: datetime | date | str, field_name: str) -> datetime:
@@ -129,6 +145,51 @@ def _calculate_totals(items: list[dict]) -> tuple[float, float, float]:
     tax = round(sum(float(item["total"]) * VAT_RATE for item in active_items), 2)
     total = round(subtotal + tax, 2)
     return subtotal, tax, total
+
+
+def _load_supplier_category_ids(session: Session, supplier: SupplierModel) -> list[str]:
+    linked_ids = session.execute(
+        select(SupplierCategoryLinkModel.category_id).where(SupplierCategoryLinkModel.supplier_id == supplier.id)
+    ).scalars().all()
+    if linked_ids:
+        return _normalize_category_ids([str(item) for item in linked_ids])
+    return _normalize_category_ids(supplier.category_ids)
+
+
+def _validate_supplier_catalog_items(session: Session, supplier: SupplierModel, items: list[dict]) -> None:
+    supplier_category_ids = set(_load_supplier_category_ids(session, supplier))
+    product_ids = [str(item["productId"]) for item in items if item.get("productId")]
+    products_by_id: dict[str, ProductModel] = {}
+
+    if product_ids:
+        product_rows = session.execute(select(ProductModel).where(ProductModel.id.in_(product_ids))).scalars().all()
+        products_by_id = {row.id: row for row in product_rows}
+
+    for index, item in enumerate(items):
+        product_id = str(item["productId"]) if item.get("productId") else ""
+        product = products_by_id.get(product_id) if product_id else None
+
+        if product_id and product is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"items[{index}].productId references an unknown product.",
+            )
+
+        item_category_id = _normalize_text(item.get("categoryId"))
+        product_category_id = _normalize_text(product.category_id if product is not None else None)
+        resolved_category_id = product_category_id or item_category_id
+
+        if product_category_id and item_category_id and product_category_id != item_category_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"items[{index}] has a category that does not match the selected product.",
+            )
+
+        if supplier_category_ids and resolved_category_id and resolved_category_id not in supplier_category_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"items[{index}] is outside the supplier catalog categories.",
+            )
 
 
 def _load_order_items(session: Session, purchase_order_id: str) -> list[dict]:
@@ -229,73 +290,6 @@ def _serialize_order(model: PurchaseOrderModel, items: list[dict]) -> PurchaseOr
         createdBy=model.created_by,
         createdAt=model.created_at,
     )
-
-
-def _record_inventory_entry_for_po(
-    session: Session,
-    order: PurchaseOrderModel,
-    *,
-    created_by: str,
-    reason: str,
-) -> int:
-    items = _load_order_items(session, order.id)
-    applied = 0
-    now = datetime.utcnow()
-
-    for item in items:
-        if item.get("removedBySuperadmin"):
-            continue
-        product_id = item.get("productId")
-        if not product_id:
-            continue
-
-        existing_movement = session.execute(
-            select(InventoryMovementModel).where(
-                InventoryMovementModel.type == "IN",
-                InventoryMovementModel.purchase_order_id == order.id,
-                InventoryMovementModel.product_id == product_id,
-            )
-        ).scalars().first()
-        if existing_movement is not None:
-            continue
-
-        qty = float(item["quantity"])
-        inventory_item = session.execute(
-            select(InventoryItemModel).where(InventoryItemModel.product_id == product_id)
-        ).scalar_one_or_none()
-        if inventory_item is None:
-            product = session.get(ProductModel, product_id)
-            asset_type = "industrial" if product is None else (product.category_id or "industrial")
-            inventory_item = InventoryItemModel(
-                id=f"inv_{uuid4()}",
-                product_id=product_id,
-                stock=0,
-                location="Almacén principal",
-                asset_type=asset_type,
-                updated_at=now,
-            )
-            session.add(inventory_item)
-            session.flush()
-
-        inventory_item.stock = float(inventory_item.stock) + qty
-        inventory_item.updated_at = now
-
-        session.add(
-            InventoryMovementModel(
-                id=f"invm_{uuid4()}",
-                type="IN",
-                product_id=product_id,
-                qty=qty,
-                department_id=None,
-                reason=reason,
-                purchase_order_id=order.id,
-                created_by=created_by,
-                created_at=now,
-            )
-        )
-        applied += 1
-
-    return applied
 
 
 def _transition_status(order: PurchaseOrderModel, next_status: str, *, reason: str | None, actor_name: str) -> None:
@@ -435,6 +429,7 @@ def create_purchase_order_route(
     _ensure_not_past(order_date)
 
     normalized_items = _normalize_items([item.model_dump(exclude_none=True) for item in payload.items])
+    _validate_supplier_catalog_items(session, supplier, normalized_items)
     subtotal, tax, total = _calculate_totals(normalized_items)
 
     order = PurchaseOrderModel(
@@ -501,8 +496,8 @@ def submit_purchase_order_route(
 @router.post("/{purchase_order_id}/approve")
 def approve_purchase_order_route(
     purchase_order_id: str,
-    payload: PurchaseOrderApproveRequest,
     request: Request,
+    payload: PurchaseOrderApproveRequest | None = None,
     current_user: AuthenticatedUser = Depends(require_permissions(Permission.PURCHASE_ORDER_APPROVE)),
     session: Session = Depends(get_db),
 ) -> dict:
@@ -510,14 +505,15 @@ def approve_purchase_order_route(
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase order not found.")
 
-    _transition_status(order, "approved", reason=payload.reason, actor_name=current_user.name)
+    reason = payload.reason if payload is not None else None
+    _transition_status(order, "approved", reason=reason, actor_name=current_user.name)
 
     log_audit_event(
         session,
         action="purchase_order_approve",
         entity_type="purchase_order",
         entity_id=order.id,
-        metadata={"status": order.status, "reason": payload.reason},
+        metadata={"status": order.status, "reason": reason},
         request=request,
         user=current_user,
     )
@@ -564,14 +560,13 @@ def certify_purchase_order_route(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase order not found.")
 
     _transition_status(order, "certified", reason=None, actor_name=current_user.name)
-    moved_items = _record_inventory_entry_for_po(session, order, created_by=current_user.id, reason="OC_CERTIFIED")
 
     log_audit_event(
         session,
         action="purchase_order_certify",
         entity_type="purchase_order",
         entity_id=order.id,
-        metadata={"status": order.status, "inventoryEntries": moved_items},
+        metadata={"status": order.status},
         request=request,
         user=current_user,
     )
@@ -591,14 +586,13 @@ def receive_purchase_order_route(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase order not found.")
 
     _transition_status(order, "received", reason=None, actor_name=current_user.name)
-    moved_items = _record_inventory_entry_for_po(session, order, created_by=current_user.id, reason="OC_RECEIVED")
 
     log_audit_event(
         session,
         action="purchase_order_receive",
         entity_type="purchase_order",
         entity_id=order.id,
-        metadata={"status": order.status, "inventoryEntries": moved_items},
+        metadata={"status": order.status},
         request=request,
         user=current_user,
     )
@@ -710,18 +704,12 @@ def update_purchase_order_status_legacy(
 
     _transition_status(order, target[2], reason=reason, actor_name=current_user.name)
 
-    moved_items = 0
-    if target[2] == "certified":
-        moved_items = _record_inventory_entry_for_po(session, order, created_by=current_user.id, reason="OC_CERTIFIED")
-    elif target[2] == "received":
-        moved_items = _record_inventory_entry_for_po(session, order, created_by=current_user.id, reason="OC_RECEIVED")
-
     log_audit_event(
         session,
         action=target[0],
         entity_type="purchase_order",
         entity_id=order.id,
-        metadata={"status": order.status, "reason": reason, "inventoryEntries": moved_items},
+        metadata={"status": order.status, "reason": reason},
         request=request,
         user=current_user,
     )

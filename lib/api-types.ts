@@ -288,6 +288,11 @@ export interface FinanceBalanceSummary {
   remainingAmount: number
   status: "pending" | "partial" | "paid"
   currency: "USD"
+  creditDays: number
+  creditDueDate?: string | null
+  daysUntilCreditDue?: number | null
+  isDueToday: boolean
+  isOverdue: boolean
 }
 
 export interface FinanceLateFee {
@@ -396,7 +401,7 @@ export interface CompanySettings {
   address: string
   phone: string
   email: string
-  logo?: string
+  logo?: string | null
 }
 
 export interface LateFeeSettings {

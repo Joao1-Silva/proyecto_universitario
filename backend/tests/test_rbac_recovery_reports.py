@@ -662,6 +662,113 @@ class RbacRecoveryReportsTests(unittest.TestCase):
         self.assertEqual(audit_logs.status_code, 200, audit_logs.text)
         self.assertIn("data", audit_logs.json())
 
+    def test_10_finance_summary_marks_credit_due_and_clears_alert_when_paid(self) -> None:
+        datetime_module = __import__("datetime")
+
+        superadmin_token = self._login("juan.perez@empresa.com", "Admin123!")
+        procura_token = self._login("carlos.ruiz@empresa.com", "Procura123!")
+        finance_token = self._login("maria.lopez@empresa.com", "Finance123!")
+
+        categories_response = self.client.get("/categories", headers=self._headers(superadmin_token))
+        self.assertEqual(categories_response.status_code, 200, categories_response.text)
+        category_id = categories_response.json()["data"][0]["id"]
+
+        supplier_id = self._create_supplier(
+            superadmin_token,
+            category_id,
+            f"DUEALERT{datetime_module.datetime.utcnow().strftime('%H%M%S%f')}",
+        )
+
+        products_response = self.client.get("/products", headers=self._headers(procura_token))
+        self.assertEqual(products_response.status_code, 200, products_response.text)
+        products = products_response.json().get("data", [])
+        if not products:
+            create_product = self.client.post(
+                "/products",
+                headers=self._headers(procura_token),
+                json={
+                    "categoryId": category_id,
+                    "name": "Producto Vencimiento",
+                    "description": "Producto para validar vencimientos en finanzas",
+                    "unit": "unidad",
+                    "isTypical": True,
+                    "isActive": True,
+                },
+            )
+            self.assertEqual(create_product.status_code, 201, create_product.text)
+            product_id = create_product.json()["data"]["id"]
+        else:
+            product_id = products[0]["id"]
+
+        today = datetime_module.datetime.utcnow().date()
+        purchase_order_response = self.client.post(
+            "/purchase-orders",
+            headers=self._headers(procura_token),
+            json={
+                "supplierId": supplier_id,
+                "date": today.isoformat(),
+                "items": [
+                    {
+                        "productId": product_id,
+                        "description": "Item test vencimiento",
+                        "quantity": 2,
+                        "unit": "unidad",
+                        "unitPrice": 125,
+                        "categoryId": category_id,
+                    }
+                ],
+                "reason": "Orden para validar alerta de vencimiento",
+            },
+        )
+        self.assertEqual(purchase_order_response.status_code, 201, purchase_order_response.text)
+        po_id = purchase_order_response.json()["data"]["id"]
+        approved_at = datetime_module.datetime.combine(today - datetime_module.timedelta(days=15), datetime_module.time.min)
+
+        with get_engine().begin() as connection:
+            connection.execute(
+                text("UPDATE purchase_orders SET status = 'approved', approved_at = :approved_at WHERE id = :po_id"),
+                {"approved_at": approved_at, "po_id": po_id},
+            )
+
+        summary_response = self.client.get(
+            "/finanzas/resumen",
+            headers=self._headers(finance_token),
+            params={"purchaseOrderId": po_id},
+        )
+        self.assertEqual(summary_response.status_code, 200, summary_response.text)
+        summary_row = summary_response.json()["data"][0]
+        self.assertEqual(summary_row["creditDays"], 15)
+        self.assertEqual(summary_row["creditDueDate"], today.isoformat())
+        self.assertTrue(summary_row["isDueToday"])
+        self.assertFalse(summary_row["isOverdue"])
+
+        payment_response = self.client.post(
+            "/finanzas/pagos",
+            headers=self._headers(finance_token),
+            json={
+                "purchaseOrderId": po_id,
+                "amount": summary_row["remainingAmount"],
+                "currency": "USD",
+                "paymentType": "contado",
+                "paymentMode": "transferencia",
+                "reference": "DUE-001",
+                "concept": "Pago total de orden con vencimiento hoy",
+            },
+        )
+        self.assertEqual(payment_response.status_code, 201, payment_response.text)
+
+        settled_response = self.client.get(
+            "/finanzas/resumen",
+            headers=self._headers(finance_token),
+            params={"purchaseOrderId": po_id},
+        )
+        self.assertEqual(settled_response.status_code, 200, settled_response.text)
+        settled_row = settled_response.json()["data"][0]
+        self.assertEqual(settled_row["remainingAmount"], 0.0)
+        self.assertEqual(settled_row["status"], "paid")
+        self.assertFalse(settled_row["isDueToday"])
+        self.assertFalse(settled_row["isOverdue"])
+
 
 if __name__ == "__main__":
     unittest.main()

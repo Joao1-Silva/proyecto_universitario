@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..audit import log_audit_event
+from ..inventory_services import ensure_default_departments, sort_departments_for_display
 from ..models import DepartmentModel, InventoryItemModel, InventoryMovementModel, ProductModel
 from ..schemas import InventoryOutRequest
 from ..security import AuthenticatedUser, Permission, get_db, require_permissions
@@ -203,6 +204,7 @@ def register_inventory_out(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="qty must be greater than zero.")
 
     _ensure_product_exists(session, payload.productId)
+    ensure_default_departments(session)
     department = session.get(DepartmentModel, payload.departmentId)
     if department is None or not department.is_active:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="departmentId is invalid or inactive.")
@@ -248,10 +250,14 @@ def list_departments(
     _current_user: AuthenticatedUser = Depends(require_permissions(Permission.INVENTORY_VIEW)),
     session: Session = Depends(get_db),
 ) -> dict:
+    ensure_default_departments(session)
+    session.commit()
+
     query = select(DepartmentModel)
     if only_active:
         query = query.where(DepartmentModel.is_active.is_(True))
-    departments = session.execute(query.order_by(func.lower(DepartmentModel.name))).scalars().all()
+    departments = session.execute(query).scalars().all()
+    departments = sort_departments_for_display(departments)
     return {"data": [_serialize_department(dep) for dep in departments], "meta": {"source": "api"}}
 
 

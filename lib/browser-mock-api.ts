@@ -110,6 +110,26 @@ const normalizeRole = (value: unknown): CanonicalRole => {
 
 const asIso = (daysAgo = 0): string => new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString()
 
+const DEFAULT_DEPARTMENT_DEFS = [
+  { id: "dept_mantenimiento", name: "Mantenimiento" },
+  { id: "dept_operaciones", name: "Operaciones" },
+  { id: "dept_administracion", name: "Administracion" },
+  { id: "dept_laborales", name: "Laborales" },
+] as const
+
+const CANONICAL_DEPARTMENT_ORDER = new Map<string, number>(
+  DEFAULT_DEPARTMENT_DEFS.map((department, index) => [department.name, index]),
+)
+
+const buildDefaultDepartments = (): Department[] =>
+  DEFAULT_DEPARTMENT_DEFS.map((department) => ({
+    id: department.id,
+    name: department.name,
+    isActive: true,
+    createdAt: asIso(300),
+    updatedAt: asIso(300),
+  }))
+
 const createId = (prefix: string): string => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return `${prefix}_${crypto.randomUUID()}`
@@ -354,13 +374,15 @@ const seedState = (): MockApiState => {
     },
   ]
 
-  const departments: Department[] = [
+  const legacyDepartments: Department[] = [
     { id: "dept_operaciones", name: "Operaciones", isActive: true, createdAt: asIso(300), updatedAt: asIso(300) },
     { id: "dept_mantenimiento", name: "Mantenimiento", isActive: true, createdAt: asIso(300), updatedAt: asIso(300) },
     { id: "dept_procura", name: "Compras/Procura", isActive: true, createdAt: asIso(300), updatedAt: asIso(300) },
     { id: "dept_finanzas", name: "Finanzas", isActive: true, createdAt: asIso(300), updatedAt: asIso(300) },
     { id: "dept_almacen", name: "Almacén", isActive: true, createdAt: asIso(300), updatedAt: asIso(300) },
   ]
+
+  const departments: Department[] = legacyDepartments.slice(0, 0).concat(buildDefaultDepartments())
 
   const financePayments: FinancePayment[] = [
     {
@@ -510,6 +532,9 @@ const ensureStateShape = (value: unknown): MockApiState | null => {
 
 const loadState = (): MockApiState => {
   if (memoryState) {
+    if (ensureDefaultDepartments(memoryState) && typeof window !== "undefined") {
+      window.localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify(memoryState))
+    }
     return memoryState
   }
   if (typeof window === "undefined") {
@@ -534,6 +559,9 @@ const loadState = (): MockApiState => {
 
     memoryState = normalized
     clearExpiredSessions(memoryState)
+    if (ensureDefaultDepartments(memoryState)) {
+      window.localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify(memoryState))
+    }
     return memoryState
   } catch {
     memoryState = seedState()
@@ -824,7 +852,41 @@ const getNextOrderNumber = (state: MockApiState, year: number): string => {
   return `${prefix}${String(sequence + 1).padStart(4, "0")}`
 }
 
+const ensureDefaultDepartments = (state: MockApiState): boolean => {
+  let mutated = false
+  const nowIso = new Date().toISOString()
+
+  for (const department of DEFAULT_DEPARTMENT_DEFS) {
+    const existing = state.departments.find(
+      (item) => item.name.trim().toLowerCase() === department.name.trim().toLowerCase(),
+    )
+    if (!existing) {
+      state.departments = [
+        ...state.departments,
+        {
+          id: department.id,
+          name: department.name,
+          isActive: true,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+      ]
+      mutated = true
+      continue
+    }
+
+    if (!existing.isActive) {
+      existing.isActive = true
+      existing.updatedAt = nowIso
+      mutated = true
+    }
+  }
+
+  return mutated
+}
+
 const recordInventoryEntryForOrder = (state: MockApiState, order: PurchaseOrder, actor: MockUserRecord, reason: string) => {
+  let movedItems = 0
   for (const item of order.items) {
     if (item.removedBySuperadmin) continue
     if (!item.productId) continue
@@ -865,7 +927,10 @@ const recordInventoryEntryForOrder = (state: MockApiState, order: PurchaseOrder,
       },
       ...state.inventoryMovements,
     ]
+    movedItems += 1
   }
+
+  return movedItems
 }
 
 const transitionPurchaseOrder = (
@@ -911,10 +976,8 @@ const transitionPurchaseOrder = (
     order.rejectionReason = reason.trim()
   } else if (nextStatus === "certified") {
     order.certifiedAt = nowIso
-    recordInventoryEntryForOrder(state, order, currentUser, "OC_CERTIFIED")
   } else if (nextStatus === "received") {
     order.receivedAt = nowIso
-    recordInventoryEntryForOrder(state, order, currentUser, "OC_RECEIVED")
   }
 
   return null
@@ -927,7 +990,45 @@ const summarizeInstallmentsByOrder = (rows: FinanceInstallment[]): Record<string
   }, {})
 }
 
-const buildFinanceSummaryForOrder = (order: PurchaseOrder, paidAmount: number): FinanceBalanceSummary => {
+const startOfDay = (value: Date): Date => new Date(value.getFullYear(), value.getMonth(), value.getDate())
+
+const buildCreditDueFields = (
+  order: PurchaseOrder,
+  supplier: Supplier | undefined,
+  remainingAmount: number,
+): Pick<FinanceBalanceSummary, "creditDays" | "creditDueDate" | "daysUntilCreditDue" | "isDueToday" | "isOverdue"> => {
+  const creditDays = Math.max(Number(supplier?.creditDays ?? 0), 0)
+  if (creditDays <= 0) {
+    return {
+      creditDays: 0,
+      creditDueDate: null,
+      daysUntilCreditDue: null,
+      isDueToday: false,
+      isOverdue: false,
+    }
+  }
+
+  const baseDate = order.approvedAt ? new Date(order.approvedAt) : new Date(order.date)
+  const dueDate = startOfDay(new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + creditDays))
+  const today = startOfDay(new Date())
+  const millisPerDay = 24 * 60 * 60 * 1000
+  const daysUntilCreditDue = Math.round((dueDate.getTime() - today.getTime()) / millisPerDay)
+  const hasPendingBalance = remainingAmount > 0
+
+  return {
+    creditDays,
+    creditDueDate: dueDate.toISOString().slice(0, 10),
+    daysUntilCreditDue,
+    isDueToday: hasPendingBalance && daysUntilCreditDue === 0,
+    isOverdue: hasPendingBalance && daysUntilCreditDue < 0,
+  }
+}
+
+const buildFinanceSummaryForOrder = (
+  state: MockApiState,
+  order: PurchaseOrder,
+  paidAmount: number,
+): FinanceBalanceSummary => {
   const totalAmount = Number(Number(order.total).toFixed(2))
   const paid = Number(Number(paidAmount).toFixed(2))
   const remainingAmount = Number(Math.max(totalAmount - paid, 0).toFixed(2))
@@ -945,7 +1046,18 @@ const buildFinanceSummaryForOrder = (order: PurchaseOrder, paidAmount: number): 
     remainingAmount,
     status,
     currency: "USD",
+    ...buildCreditDueFields(order, getSupplierForOrder(state, order), remainingAmount),
   }
+}
+
+const getSupplierForOrder = (state: MockApiState, order: PurchaseOrder): Supplier | undefined =>
+  state.suppliers.find((item) => item.id === order.supplierId)
+
+const validateFinanceOrderStatus = (order: PurchaseOrder): string | null => {
+  if (!["approved", "certified", "received"].includes(order.status)) {
+    return "Solo se pueden registrar pagos o abonos para órdenes aprobadas, certificadas o recibidas."
+  }
+  return null
 }
 
 const paginate = <T,>(rows: T[], page: number, pageSize: number) => {
@@ -1789,6 +1901,7 @@ export const mockApiRequest = async (
     if (!reason) return failure(422, "reason es requerido.")
     if (!Number.isFinite(qty) || qty <= 0) return failure(422, "qty debe ser mayor a cero.")
 
+    ensureDefaultDepartments(state)
     const product = state.products.find((item) => item.id === productId)
     if (!product) return failure(404, "Producto no encontrado.")
     const department = state.departments.find((item) => item.id === departmentId && item.isActive)
@@ -1835,7 +1948,13 @@ export const mockApiRequest = async (
 
   if (routeKey === "GET:/departments") {
     const onlyActive = parseBooleanQuery(url.searchParams.get("only_active"))
-    const rows = onlyActive ? state.departments.filter((item) => item.isActive) : [...state.departments]
+    ensureDefaultDepartments(state)
+    const rows = (onlyActive ? state.departments.filter((item) => item.isActive) : [...state.departments]).sort(
+      (left, right) =>
+        (CANONICAL_DEPARTMENT_ORDER.get(left.name) ?? CANONICAL_DEPARTMENT_ORDER.size) -
+          (CANONICAL_DEPARTMENT_ORDER.get(right.name) ?? CANONICAL_DEPARTMENT_ORDER.size) ||
+        left.name.localeCompare(right.name),
+    )
     return success(wrapData(rows), 200)
   }
 
@@ -1849,7 +1968,7 @@ export const mockApiRequest = async (
     const paidByOrder = summarizeInstallmentsByOrder(state.financeInstallments)
     const summaries = orders
       .sort((left, right) => right.date.localeCompare(left.date))
-      .map((order) => buildFinanceSummaryForOrder(order, paidByOrder[order.id] ?? 0))
+      .map((order) => buildFinanceSummaryForOrder(state, order, paidByOrder[order.id] ?? 0))
 
     return success(wrapData(summaries), 200)
   }
@@ -1877,6 +1996,24 @@ export const mockApiRequest = async (
 
     const order = state.purchaseOrders.find((item) => item.id === purchaseOrderId)
     if (!order) return failure(404, "Orden de compra no encontrada.")
+    const statusError = validateFinanceOrderStatus(order)
+    if (statusError) return failure(422, statusError)
+    const supplier = getSupplierForOrder(state, order)
+    if (!supplier) return failure(404, "Proveedor no encontrado.")
+    const paidByOrder = summarizeInstallmentsByOrder(state.financeInstallments)
+    const currentSummary = buildFinanceSummaryForOrder(state, order, paidByOrder[order.id] ?? 0)
+    if (currentSummary.remainingAmount <= 0) return failure(422, "La orden ya estÃ¡ pagada.")
+    if (amount > currentSummary.remainingAmount) return failure(422, "El pago no puede superar el saldo restante.")
+    if (supplier.creditDays <= 0) {
+      if (paymentType !== "contado") return failure(422, "El proveedor no tiene dÃ­as de crÃ©dito. Solo se admite pago de contado.")
+      if (Number(amount.toFixed(2)) !== Number(currentSummary.remainingAmount.toFixed(2))) {
+        return failure(422, "El proveedor no tiene dÃ­as de crÃ©dito. Debe registrar el pago completo.")
+      }
+    }
+
+    if (paymentType === "contado" && Number(amount.toFixed(2)) !== Number(currentSummary.remainingAmount.toFixed(2))) {
+      return failure(422, "Los pagos de contado deben registrar el saldo completo de la orden.")
+    }
 
     const payment: FinancePayment = {
       id: createId("fpay"),
@@ -1890,14 +2027,29 @@ export const mockApiRequest = async (
       createdBy: currentUser.id,
       createdAt: new Date().toISOString(),
     }
+    const installment: FinanceInstallment = {
+      id: createId("fins"),
+      purchaseOrderId,
+      financePaymentId: payment.id,
+      amount: payment.amount,
+      currency: "USD",
+      concept: payment.concept,
+      createdBy: currentUser.id,
+      createdAt: payment.createdAt,
+    }
     state.financePayments = [payment, ...state.financePayments]
+    state.financeInstallments = [installment, ...state.financeInstallments]
+    const movedItems = recordInventoryEntryForOrder(state, order, currentUser, "FINANCE_PAYMENT")
     appendMonitoringEvent(state, currentUser, "finance_payment_create", "finance_payment", payment.id, {
       purchaseOrderId: order.id,
       amount: payment.amount,
       paymentType: payment.paymentType,
+      generatedInstallmentId: installment.id,
+      inventoryEntries: movedItems,
     })
     saveState(state)
-    return success(wrapData(payment), 201)
+    const nextSummary = buildFinanceSummaryForOrder(state, order, (paidByOrder[order.id] ?? 0) + installment.amount)
+    return success(wrapData({ ...payment, generatedInstallmentId: installment.id, balance: nextSummary, inventoryEntries: movedItems }), 201)
   }
 
   if (routeKey === "GET:/finanzas/abonos") {
@@ -1919,6 +2071,13 @@ export const mockApiRequest = async (
 
     const order = state.purchaseOrders.find((item) => item.id === purchaseOrderId)
     if (!order) return failure(404, "Orden de compra no encontrada.")
+    const statusError = validateFinanceOrderStatus(order)
+    if (statusError) return failure(422, statusError)
+    const supplier = getSupplierForOrder(state, order)
+    if (!supplier) return failure(404, "Proveedor no encontrado.")
+    if (supplier.creditDays <= 0) {
+      return failure(422, "El proveedor no tiene dÃ­as de crÃ©dito. Debe registrar un pago completo, no abonos.")
+    }
 
     const financePaymentId = typeof body.financePaymentId === "string" ? body.financePaymentId : null
     if (financePaymentId) {
@@ -1927,7 +2086,7 @@ export const mockApiRequest = async (
     }
 
     const paidByOrder = summarizeInstallmentsByOrder(state.financeInstallments)
-    const currentSummary = buildFinanceSummaryForOrder(order, paidByOrder[order.id] ?? 0)
+    const currentSummary = buildFinanceSummaryForOrder(state, order, paidByOrder[order.id] ?? 0)
     if (currentSummary.remainingAmount <= 0) return failure(422, "La orden ya está pagada.")
     if (amount > currentSummary.remainingAmount) {
       return failure(422, "El abono no puede superar el saldo restante.")
@@ -1944,13 +2103,15 @@ export const mockApiRequest = async (
       createdAt: new Date().toISOString(),
     }
     state.financeInstallments = [installment, ...state.financeInstallments]
+    const movedItems = recordInventoryEntryForOrder(state, order, currentUser, "FINANCE_INSTALLMENT")
     appendMonitoringEvent(state, currentUser, "finance_installment_create", "finance_installment", installment.id, {
       purchaseOrderId: order.id,
       amount: installment.amount,
+      inventoryEntries: movedItems,
     })
     saveState(state)
-    const nextSummary = buildFinanceSummaryForOrder(order, (paidByOrder[order.id] ?? 0) + installment.amount)
-    return success(wrapData({ ...installment, balance: nextSummary }), 201)
+    const nextSummary = buildFinanceSummaryForOrder(state, order, (paidByOrder[order.id] ?? 0) + installment.amount)
+    return success(wrapData({ ...installment, balance: nextSummary, inventoryEntries: movedItems }), 201)
   }
 
   if (routeKey === "GET:/monitoring/movements") {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { type ChangeEvent, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,11 +34,12 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { createApiClient } from "@/lib/api-client"
 import { getPermissions, roleLabel } from "@/lib/permissions"
-import { getCurrentUser, useAppStore } from "@/lib/store"
+import { getCurrentUser, updateStore, useAppStore } from "@/lib/store"
 import { useToast } from "@/hooks/use-toast"
 
 const apiClient = createApiClient({ timeoutMs: 3000, retries: 1 })
 const emailRegex = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i
+const MAX_LOGO_SIZE_BYTES = 512 * 1024
 
 const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   name: "",
@@ -46,6 +47,7 @@ const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   address: "",
   phone: "",
   email: "",
+  logo: undefined,
 }
 
 const createSecurityQuestionForm = () => [
@@ -59,6 +61,22 @@ const readData = <T,>(payload: unknown): T | null => {
   const data = (payload as { data?: unknown }).data
   if (data === undefined) return null
   return data as T
+}
+
+const normalizeCompanySettings = (value: CompanySettings | null | undefined): CompanySettings => ({
+  name: value?.name ?? "",
+  rif: value?.rif ?? "",
+  address: value?.address ?? "",
+  phone: value?.phone ?? "",
+  email: value?.email ?? "",
+  logo: typeof value?.logo === "string" && value.logo.trim() ? value.logo : undefined,
+})
+
+const syncCompanySettings = (value: CompanySettings) => {
+  updateStore((storeState) => ({
+    ...storeState,
+    companySettings: value,
+  }))
 }
 
 export default function SettingsPage() {
@@ -117,8 +135,10 @@ export default function SettingsPage() {
     const companyData = readData<CompanySettings>(companyResponse.data)
     const usersData = readData<User[]>(usersResponse.data)
     const questionsData = readData<SecurityQuestion[]>(questionsResponse.data)
+    const nextCompanySettings = normalizeCompanySettings(companyData)
 
-    setCompanySettings(companyData ?? DEFAULT_COMPANY_SETTINGS)
+    setCompanySettings(nextCompanySettings)
+    syncCompanySettings(nextCompanySettings)
     setUsers(usersData ?? [])
     setSecurityQuestionsCatalog(questionsData ?? [])
     setIsLoading(false)
@@ -181,8 +201,9 @@ export default function SettingsPage() {
     }))
 
   const handleSaveCompany = async () => {
+    const payload = normalizeCompanySettings(companySettings)
     setIsSubmitting(true)
-    const response = await apiClient.request<unknown>("PUT", "/company-settings", companySettings)
+    const response = await apiClient.request<unknown>("PUT", "/company-settings", payload)
     setIsSubmitting(false)
 
     if (!response.ok) {
@@ -194,11 +215,65 @@ export default function SettingsPage() {
       return
     }
 
-    const updated = readData<CompanySettings>(response.data)
-    if (updated) {
-      setCompanySettings(updated)
-    }
+    const updated = normalizeCompanySettings(readData<CompanySettings>(response.data) ?? payload)
+    setCompanySettings(updated)
+    syncCompanySettings(updated)
     toast({ title: "Empresa actualizada", description: "Los datos de la empresa se guardaron en BD." })
+  }
+
+  const handleLogoChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+
+    if (!file) return
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Archivo invalido",
+        description: "Selecciona una imagen PNG, JPG, WEBP o SVG.",
+        variant: "destructive",
+      })
+      return
+    }
+    if (file.size > MAX_LOGO_SIZE_BYTES) {
+      toast({
+        title: "Archivo demasiado grande",
+        description: "El logo no puede superar 512 KB.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result !== "string" || !reader.result.trim()) {
+        toast({
+          title: "No se pudo leer el archivo",
+          description: "Intenta nuevamente con otra imagen.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      setCompanySettings((current) => ({
+        ...current,
+        logo: reader.result as string,
+      }))
+    }
+    reader.onerror = () => {
+      toast({
+        title: "No se pudo leer el archivo",
+        description: "Intenta nuevamente con otra imagen.",
+        variant: "destructive",
+      })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleRemoveLogo = () => {
+    setCompanySettings((current) => ({
+      ...current,
+      logo: undefined,
+    }))
   }
 
   const handleCreateUser = async () => {
@@ -494,6 +569,42 @@ export default function SettingsPage() {
                     onChange={(e) => setCompanySettings({ ...companySettings, email: e.target.value })}
                     disabled={isLoading || isSubmitting}
                   />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="company-logo">Logo</Label>
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex h-24 items-center justify-center rounded-md border bg-muted/30 px-4">
+                    {companySettings.logo ? (
+                      <img
+                        src={companySettings.logo}
+                        alt={`Logo de ${companySettings.name || "la empresa"}`}
+                        className="max-h-16 w-auto object-contain"
+                      />
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Sin logo cargado</span>
+                    )}
+                  </div>
+                  <Input
+                    id="company-logo"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    onChange={handleLogoChange}
+                    disabled={isLoading || isSubmitting}
+                  />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRemoveLogo}
+                      disabled={!companySettings.logo || isLoading || isSubmitting}
+                    >
+                      Quitar logo
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      Se mostrara en la esquina superior izquierda. Formatos: PNG, JPG, WEBP o SVG hasta 512 KB.
+                    </p>
+                  </div>
                 </div>
               </div>
               <Button onClick={handleSaveCompany} disabled={isLoading || isSubmitting}>

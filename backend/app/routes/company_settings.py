@@ -4,7 +4,7 @@ from ..audit import log_audit_event
 from ..db import get_session_factory
 from ..models import CompanySettingsModel
 from ..schemas import CompanySettingsRead, CompanySettingsUpdate
-from ..security import AuthenticatedUser, Permission, require_permissions
+from ..security import AuthenticatedUser, Permission, get_current_user, require_permissions
 
 router = APIRouter(tags=["company-settings"])
 
@@ -42,7 +42,7 @@ def _ensure_settings(session) -> CompanySettingsModel:
 
 @router.get("/company-settings")
 def get_company_settings(
-    _current_user: AuthenticatedUser = Depends(require_permissions(Permission.SETTINGS_MANAGE)),
+    _current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict:
     session_factory = _get_session_factory()
     with session_factory() as session:
@@ -64,7 +64,7 @@ def update_company_settings(
         settings.address = payload.address.strip()
         settings.phone = payload.phone.strip()
         settings.email = payload.email.strip()
-        settings.logo = payload.logo
+        settings.logo = payload.logo.strip() if payload.logo and payload.logo.strip() else None
         log_audit_event(
             session,
             action="company_settings_update",
